@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-export function useNoiseMeter() {
+export function useNoiseMeter(dbLimit: number = 60) {
   const [db, setDb] = useState(0);
   const [started, setStarted] = useState(false);
 
@@ -27,12 +27,12 @@ export function useNoiseMeter() {
 
     const dataArray = new Uint8Array(analyser.fftSize);
 
-    // ===== GIỮ SMOOTH =====
+    // ===== GIỮ LOGIC CŨ, BỎ PEAK =====
     let smoothDb = 0;
 
     const SMOOTHING = 0.1;      // mượt ~0.5s
-    const VIBRATE_LIMIT = 80;  // ngưỡng rung
-    const NOISE_GATE = 3;      // chặn nhiễu mic
+    const NOISE_GATE = 4;       // CHẶN NHIỄU NỀN (RẤT QUAN TRỌNG)
+    const VIBRATE_COOLDOWN = 1000;
 
     let lastVibrate = 0;
 
@@ -47,27 +47,27 @@ export function useNoiseMeter() {
 
       const rms = Math.sqrt(sum / dataArray.length);
 
-      // ===== dB đo thật =====
-      let rawDb = Math.min(100, Math.max(0, rms * 120));
+      // ===== dB gốc =====
+      const rawDb = Math.min(100, Math.max(0, rms * 120));
 
       // ===== NOISE GATE =====
-      if (rawDb < NOISE_GATE) rawDb = 0;
+      const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
 
       // ===== SMOOTH =====
-      smoothDb = smoothDb + (rawDb - smoothDb) * SMOOTHING;
+      smoothDb = smoothDb + (gatedDb - smoothDb) * SMOOTHING;
 
-      // ===== RUNG (CHỈ THEO smoothDb) =====
+      // ===== RUNG: CHỈ KHI > LIMIT =====
       const now = Date.now();
       if (
-        smoothDb >= VIBRATE_LIMIT &&
+        smoothDb >= dbLimit &&
         navigator.vibrate &&
-        now - lastVibrate > 1000
+        now - lastVibrate > VIBRATE_COOLDOWN
       ) {
         navigator.vibrate(200);
         lastVibrate = now;
       }
 
-      // ===== HIỂN THỊ =====
+      // ===== GỬI RA UI =====
       setDb(Math.round(smoothDb));
 
       rafRef.current = requestAnimationFrame(update);
