@@ -27,15 +27,12 @@ export function useNoiseMeter() {
 
     const dataArray = new Uint8Array(analyser.fftSize);
 
-    // ===== GIỮ NGUYÊN LOGIC CŨ =====
+    // ===== GIỮ SMOOTH =====
     let smoothDb = 0;
-    let peakDb = 0;
 
-    const SMOOTHING = 0.1;
-    const PEAK_FALL = 0.4;
-    const VIBRATE_LIMIT = 80;
-
-    const NOISE_GATE = 5; // 🔧 nâng gate để triệt rung khi im lặng
+    const SMOOTHING = 0.1;      // mượt ~0.5s
+    const VIBRATE_LIMIT = 80;  // ngưỡng rung
+    const NOISE_GATE = 3;      // chặn nhiễu mic
 
     let lastVibrate = 0;
 
@@ -50,28 +47,19 @@ export function useNoiseMeter() {
 
       const rms = Math.sqrt(sum / dataArray.length);
 
-      // ===== dB gốc (đo thật) =====
-      const rawDb = Math.min(100, Math.max(0, rms * 120));
+      // ===== dB đo thật =====
+      let rawDb = Math.min(100, Math.max(0, rms * 120));
 
       // ===== NOISE GATE =====
-      const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
+      if (rawDb < NOISE_GATE) rawDb = 0;
 
-      // ===== SMOOTHING (HIỂN THỊ) =====
-      smoothDb = smoothDb + (gatedDb - smoothDb) * SMOOTHING;
+      // ===== SMOOTH =====
+      smoothDb = smoothDb + (rawDb - smoothDb) * SMOOTHING;
 
-      // ===== PEAK HOLD (HIỂN THỊ) =====
-      if (smoothDb > peakDb) {
-        peakDb = smoothDb;
-      } else {
-        peakDb -= PEAK_FALL;
-        if (peakDb < smoothDb) peakDb = smoothDb;
-        if (peakDb < 0) peakDb = 0;
-      }
-
-      // ===== RUNG: DÙNG dB THẬT, KHÔNG DÙNG smooth =====
+      // ===== RUNG (CHỈ THEO smoothDb) =====
       const now = Date.now();
       if (
-        gatedDb >= VIBRATE_LIMIT &&
+        smoothDb >= VIBRATE_LIMIT &&
         navigator.vibrate &&
         now - lastVibrate > 1000
       ) {
@@ -79,8 +67,8 @@ export function useNoiseMeter() {
         lastVibrate = now;
       }
 
-      // ===== UI: DÙNG peakDb =====
-      setDb(Math.round(peakDb));
+      // ===== HIỂN THỊ =====
+      setDb(Math.round(smoothDb));
 
       rafRef.current = requestAnimationFrame(update);
     };
