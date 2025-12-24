@@ -2,16 +2,22 @@
 
 import { useRef, useState } from "react";
 
-export function useNoiseMeter(dbLimit: number = 60) {
+export function useNoiseMeter() {
   const [db, setDb] = useState(0);
   const [started, setStarted] = useState(false);
 
-  const rafRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef<number | null>(null);
 
-  // ===== REF PHỤC VỤ RUNG =====
-  const overLimitSinceRef = useRef<number | null>(null);
-  const lastVibrateRef = useRef(0);
+  // ===== CẤU HÌNH =====
+  const NOISE_GATE = 8;        // dưới mức này coi như im lặng
+  const SMOOTHING = 0.1;       // mượt
+  const VIBRATE_LIMIT = 60;    // ngưỡng rung
+  const HOLD_TIME = 2000;      // phải vượt 2s mới rung
+
+  let smoothDb = 0;
+  let overLimitSince: number | null = null;
+  let lastVibrate = 0;
 
   const start = async () => {
     if (started) return;
@@ -31,14 +37,6 @@ export function useNoiseMeter(dbLimit: number = 60) {
 
     const dataArray = new Uint8Array(analyser.fftSize);
 
-    // ===== LOGIC GỐC =====
-    let smoothDb = 0;
-
-    const SMOOTHING = 0.1;      // mượt
-    const NOISE_GATE = 4;       // chặn nhiễu nền
-    const OVER_LIMIT_TIME = 2000; // 2 giây
-    const VIBRATE_COOLDOWN = 1500;
-
     const update = () => {
       analyser.getByteTimeDomainData(dataArray);
 
@@ -49,42 +47,36 @@ export function useNoiseMeter(dbLimit: number = 60) {
       }
 
       const rms = Math.sqrt(sum / dataArray.length);
-
-      // ===== dB đo thật =====
-      const rawDb = Math.min(100, Math.max(0, rms * 120));
+      let rawDb = Math.min(100, rms * 120);
 
       // ===== NOISE GATE =====
-      const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
+      if (rawDb < NOISE_GATE) rawDb = 0;
 
       // ===== SMOOTH =====
-      smoothDb = smoothDb + (gatedDb - smoothDb) * SMOOTHING;
+      smoothDb = smoothDb + (rawDb - smoothDb) * SMOOTHING;
 
-      // ===== LOGIC RUNG CHUẨN =====
       const now = Date.now();
 
-      if (smoothDb > dbLimit) {
-        if (overLimitSinceRef.current === null) {
-          overLimitSinceRef.current = now; // bắt đầu vượt
+      // ===== LOGIC RUNG =====
+      if (smoothDb >= VIBRATE_LIMIT) {
+        if (overLimitSince === null) {
+          overLimitSince = now;
         }
-
-        const overTime = now - overLimitSinceRef.current;
 
         if (
-          overTime >= OVER_LIMIT_TIME &&
+          now - overLimitSince >= HOLD_TIME &&
           navigator.vibrate &&
-          now - lastVibrateRef.current > VIBRATE_COOLDOWN
+          now - lastVibrate > HOLD_TIME
         ) {
           navigator.vibrate(200);
-          lastVibrateRef.current = now;
+          lastVibrate = now;
         }
       } else {
-        // tụt xuống dưới limit → reset
-        overLimitSinceRef.current = null;
+        // tụt xuống dưới ngưỡng → reset
+        overLimitSince = null;
       }
 
-      // ===== GỬI RA UI =====
       setDb(Math.round(smoothDb));
-
       rafRef.current = requestAnimationFrame(update);
     };
 
