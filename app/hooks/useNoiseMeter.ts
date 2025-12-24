@@ -9,6 +9,10 @@ export function useNoiseMeter(dbLimit: number = 60) {
   const rafRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
+  // ===== REF PHỤC VỤ RUNG =====
+  const overLimitSinceRef = useRef<number | null>(null);
+  const lastVibrateRef = useRef(0);
+
   const start = async () => {
     if (started) return;
     setStarted(true);
@@ -27,14 +31,13 @@ export function useNoiseMeter(dbLimit: number = 60) {
 
     const dataArray = new Uint8Array(analyser.fftSize);
 
-    // ===== GIỮ LOGIC CŨ, BỎ PEAK =====
+    // ===== LOGIC GỐC =====
     let smoothDb = 0;
 
-    const SMOOTHING = 0.1;      // mượt ~0.5s
-    const NOISE_GATE = 4;       // CHẶN NHIỄU NỀN (RẤT QUAN TRỌNG)
-    const VIBRATE_COOLDOWN = 1000;
-
-    let lastVibrate = 0;
+    const SMOOTHING = 0.1;      // mượt
+    const NOISE_GATE = 4;       // chặn nhiễu nền
+    const OVER_LIMIT_TIME = 2000; // 2 giây
+    const VIBRATE_COOLDOWN = 1500;
 
     const update = () => {
       analyser.getByteTimeDomainData(dataArray);
@@ -47,7 +50,7 @@ export function useNoiseMeter(dbLimit: number = 60) {
 
       const rms = Math.sqrt(sum / dataArray.length);
 
-      // ===== dB gốc =====
+      // ===== dB đo thật =====
       const rawDb = Math.min(100, Math.max(0, rms * 120));
 
       // ===== NOISE GATE =====
@@ -56,15 +59,27 @@ export function useNoiseMeter(dbLimit: number = 60) {
       // ===== SMOOTH =====
       smoothDb = smoothDb + (gatedDb - smoothDb) * SMOOTHING;
 
-      // ===== RUNG: CHỈ KHI > LIMIT =====
+      // ===== LOGIC RUNG CHUẨN =====
       const now = Date.now();
-      if (
-        smoothDb >= dbLimit &&
-        navigator.vibrate &&
-        now - lastVibrate > VIBRATE_COOLDOWN
-      ) {
-        navigator.vibrate(200);
-        lastVibrate = now;
+
+      if (smoothDb > dbLimit) {
+        if (overLimitSinceRef.current === null) {
+          overLimitSinceRef.current = now; // bắt đầu vượt
+        }
+
+        const overTime = now - overLimitSinceRef.current;
+
+        if (
+          overTime >= OVER_LIMIT_TIME &&
+          navigator.vibrate &&
+          now - lastVibrateRef.current > VIBRATE_COOLDOWN
+        ) {
+          navigator.vibrate(200);
+          lastVibrateRef.current = now;
+        }
+      } else {
+        // tụt xuống dưới limit → reset
+        overLimitSinceRef.current = null;
       }
 
       // ===== GỬI RA UI =====
