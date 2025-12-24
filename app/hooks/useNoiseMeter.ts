@@ -38,46 +38,51 @@ export function useNoiseMeter() {
     let lastVibrate = 0;
 
     const update = () => {
-      analyser.getByteTimeDomainData(dataArray);
+  analyser.getByteTimeDomainData(dataArray);
 
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        const v = (dataArray[i] - 128) / 128;
-        sum += v * v;
-      }
+  let sum = 0;
+  for (let i = 0; i < dataArray.length; i++) {
+    const v = (dataArray[i] - 128) / 128;
+    sum += v * v;
+  }
 
-      const rms = Math.sqrt(sum / dataArray.length);
-      const rawDb = Math.min(100, Math.max(0, rms * 120));
+  const rms = Math.sqrt(sum / dataArray.length);
 
-      // ===== SMOOTH =====
-      smoothDb = smoothDb + (rawDb - smoothDb) * SMOOTHING;
+  // ===== dB gốc =====
+  const rawDb = Math.min(100, Math.max(0, rms * 120));
 
-      // ===== PEAK HOLD =====
-      if (smoothDb > peakDb) {
-        peakDb = smoothDb;
-      } else {
-        peakDb -= PEAK_FALL;
-        if (peakDb < smoothDb) peakDb = smoothDb;
-        if (peakDb < 0) peakDb = 0;
-      }
+  // ===== NOISE GATE (QUAN TRỌNG) =====
+  const NOISE_GATE = 2.5;
+  const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
 
-      // ===== VIBRATE =====
-      const now = Date.now();
-      if (
-        peakDb >= VIBRATE_LIMIT &&
-        navigator.vibrate &&
-        now - lastVibrate > 1000
-      ) {
-        navigator.vibrate(200);
-        lastVibrate = now;
-      }
+  // ===== SMOOTHING =====
+  smoothDb = smoothDb + (gatedDb - smoothDb) * SMOOTHING;
 
-      setDb(Math.round(peakDb));
-      rafRef.current = requestAnimationFrame(update);
-    };
+  // ===== PEAK HOLD (CHỈ ĐỂ HIỂN THỊ) =====
+  if (smoothDb > peakDb) {
+    peakDb = smoothDb;
+  } else {
+    peakDb -= PEAK_FALL;
+    if (peakDb < smoothDb) peakDb = smoothDb;
+    if (peakDb < 0) peakDb = 0;
+  }
 
-    update();
-  };
+  // ===== RUNG: CHỈ DÙNG smoothDb =====
+  const now = Date.now();
+  if (
+    smoothDb >= VIBRATE_LIMIT &&
+    navigator.vibrate &&
+    now - lastVibrate > 1000
+  ) {
+    navigator.vibrate(200);
+    lastVibrate = now;
+  }
+
+  // ===== GỬI RA UI =====
+  setDb(Math.round(smoothDb));
+
+  requestAnimationFrame(update);
+};
 
   return {
     db,
