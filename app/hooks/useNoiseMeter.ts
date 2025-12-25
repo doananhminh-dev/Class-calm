@@ -10,10 +10,12 @@ export function useNoiseMeter() {
   const rafRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  // ✅ dùng ref cho realtime logic
   const alertingRef = useRef(false);
   const alertTimeoutRef = useRef<any>(null);
   const lastAlertTimeRef = useRef(0);
+
+  // ✅ NEW: theo dõi thời gian vượt ngưỡng
+  const overLimitSinceRef = useRef<number | null>(null);
 
   const start = async () => {
     if (started) return;
@@ -33,7 +35,6 @@ export function useNoiseMeter() {
 
     const dataArray = new Uint8Array(analyser.fftSize);
 
-    // ===== REALTIME =====
     let smoothDb = 0;
 
     const SMOOTHING = 0.12;
@@ -42,6 +43,8 @@ export function useNoiseMeter() {
 
     const ALERT_DURATION = 2000;
     const COOLDOWN = 3000;
+
+    const REQUIRED_OVER_MS = 800; // ✅ phải vượt ≥ 0.8s mới rung
 
     const update = () => {
       analyser.getByteTimeDomainData(dataArray);
@@ -53,18 +56,31 @@ export function useNoiseMeter() {
       }
 
       const rms = Math.sqrt(sum / dataArray.length);
-
       const rawDb = Math.min(100, Math.max(0, rms * 110));
       const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
 
       smoothDb += (gatedDb - smoothDb) * SMOOTHING;
+      setDb(Math.round(smoothDb));
 
       const now = Date.now();
-      const aboveLimit = smoothDb >= VIBRATE_LIMIT + 2; // ✅ biên an toàn
+      const aboveLimit = smoothDb >= VIBRATE_LIMIT + 2;
 
-      // ===== LOGIC BÁO (ĐÃ FIX) =====
+      // ===== SUSTAIN LOGIC =====
+      if (aboveLimit) {
+        if (overLimitSinceRef.current === null) {
+          overLimitSinceRef.current = now;
+        }
+      } else {
+        overLimitSinceRef.current = null;
+      }
+
+      const sustained =
+        overLimitSinceRef.current !== null &&
+        now - overLimitSinceRef.current >= REQUIRED_OVER_MS;
+
+      // ===== ALERT =====
       if (
-        aboveLimit &&
+        sustained &&
         !alertingRef.current &&
         now - lastAlertTimeRef.current >= COOLDOWN
       ) {
@@ -86,7 +102,6 @@ export function useNoiseMeter() {
         }, ALERT_DURATION);
       }
 
-      setDb(Math.round(smoothDb));
       rafRef.current = requestAnimationFrame(update);
     };
 
