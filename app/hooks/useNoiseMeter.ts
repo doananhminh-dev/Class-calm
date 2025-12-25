@@ -38,11 +38,14 @@ export function useNoiseMeter() {
     let smoothDb = 0;
     let lastDb = 0;
 
+    let armed = false; // 🔥 CHỐNG RUNG BẬY KHI ĐỔI LIMIT
+
     const NOISE_FLOOR = 0.0006;
     const DB_SCALE = 220;
     const SMOOTHING = 0.28;
 
     const VIBRATE_LIMIT = 60;
+    const HYSTERESIS = 5; // db phải tụt thấp hơn limit ít nhất 5db
 
     const ALERT_DURATION = 2000;
     const COOLDOWN = 3000;
@@ -71,19 +74,25 @@ export function useNoiseMeter() {
 
       const now = Date.now();
 
-      const aboveLimit = smoothDb >= VIBRATE_LIMIT;
-      const isRising = smoothDb > lastDb;
-      const crossedUp = lastDb < VIBRATE_LIMIT && smoothDb >= VIBRATE_LIMIT;
+      // ===== ARMING LOGIC =====
+      if (smoothDb < VIBRATE_LIMIT - HYSTERESIS) {
+        armed = true;
+      }
 
-      // ✅ CHỈ RUNG KHI DB ĐI LÊN VÀ CẮT QUA LIMIT
+      const crossedUp =
+        armed &&
+        lastDb < VIBRATE_LIMIT &&
+        smoothDb >= VIBRATE_LIMIT &&
+        smoothDb > lastDb;
+
       if (
         crossedUp &&
-        isRising &&
         !alerting &&
         now - lastAlertTime >= COOLDOWN
       ) {
         setAlerting(true);
         lastAlertTime = now;
+        armed = false; // phải tụt xuống lại mới rung tiếp
 
         if (navigator.vibrate) {
           navigator.vibrate(2000);
@@ -95,8 +104,8 @@ export function useNoiseMeter() {
       }
 
       lastDb = smoothDb;
-
       setDb(Math.round(smoothDb));
+
       rafRef.current = requestAnimationFrame(update);
     };
 
