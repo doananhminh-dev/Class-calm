@@ -31,9 +31,9 @@ export function useNoiseMeter() {
     // ===== REALTIME =====
     let smoothDb = 0;
 
-    const SMOOTHING = 0.2;      // nhạy
-    const VIBRATE_LIMIT = 60;  // ngưỡng
-    const NOISE_GATE = 4;      // chặn rung khi im lặng
+    const SMOOTHING = 0.12;      // mượt hơn, không giật
+    const VIBRATE_LIMIT = 60;   // giữ nguyên
+    const NOISE_GATE = 8;
 
     const ALERT_DURATION = 2000; // báo 2s
     const COOLDOWN = 3000;       // 3s báo lại nếu vẫn vượt
@@ -53,7 +53,7 @@ export function useNoiseMeter() {
       const rms = Math.sqrt(sum / dataArray.length);
 
       // ===== dB realtime (nhạy hơn) =====
-      const rawDb = Math.min(100, Math.max(0, rms * 150));
+      const rawDb = Math.min(100, Math.max(0, rms * 110));
       const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
 
       // ===== SMOOTH =====
