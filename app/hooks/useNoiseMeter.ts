@@ -14,7 +14,6 @@ export function useNoiseMeter() {
     if (started) return;
     setStarted(true);
 
-    // ===== MIC =====
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: false,
@@ -23,13 +22,9 @@ export function useNoiseMeter() {
       },
     });
 
-    // ===== AUDIO CONTEXT (FIX MOBILE) =====
     const audioContext = new AudioContext();
     audioContextRef.current = audioContext;
-
-    if (audioContext.state !== "running") {
-      await audioContext.resume();
-    }
+    if (audioContext.state !== "running") await audioContext.resume();
 
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 2048;
@@ -39,17 +34,18 @@ export function useNoiseMeter() {
 
     const dataArray = new Uint8Array(analyser.fftSize);
 
-    // ===== CONFIG (TUNE CHO MOBILE) =====
+    // ===== CONFIG =====
     let smoothDb = 0;
+    let lastDb = 0;
 
-    const NOISE_FLOOR = 0.0006;   // rất quan trọng cho điện thoại
-    const DB_SCALE = 220;         // tăng độ nhạy
-    const SMOOTHING = 0.28;       // mượt nhưng không ăn mất tín hiệu
+    const NOISE_FLOOR = 0.0006;
+    const DB_SCALE = 220;
+    const SMOOTHING = 0.28;
 
     const VIBRATE_LIMIT = 60;
 
-    const ALERT_DURATION = 2000;  // rung 2s
-    const COOLDOWN = 3000;        // 3s mới rung lại
+    const ALERT_DURATION = 2000;
+    const COOLDOWN = 3000;
 
     let lastAlertTime = 0;
     let alertTimeout: any = null;
@@ -57,7 +53,6 @@ export function useNoiseMeter() {
     const update = () => {
       analyser.getByteTimeDomainData(dataArray);
 
-      // ===== RMS =====
       let sum = 0;
       for (let i = 0; i < dataArray.length; i++) {
         const v = (dataArray[i] - 128) / 128;
@@ -65,8 +60,6 @@ export function useNoiseMeter() {
       }
 
       const rms = Math.sqrt(sum / dataArray.length);
-
-      // ===== REALTIME DB (KHÔNG PEAK) =====
       const effectiveRms = Math.max(0, rms - NOISE_FLOOR);
 
       const realtimeDb = Math.min(
@@ -74,15 +67,18 @@ export function useNoiseMeter() {
         Math.max(0, effectiveRms * DB_SCALE)
       );
 
-      // ===== SMOOTH NHẸ =====
       smoothDb += (realtimeDb - smoothDb) * SMOOTHING;
 
       const now = Date.now();
-      const aboveLimit = smoothDb >= VIBRATE_LIMIT;
 
-      // ===== RUNG: CHỈ DỰA REALTIME =====
+      const aboveLimit = smoothDb >= VIBRATE_LIMIT;
+      const isRising = smoothDb > lastDb;
+      const crossedUp = lastDb < VIBRATE_LIMIT && smoothDb >= VIBRATE_LIMIT;
+
+      // ✅ CHỈ RUNG KHI DB ĐI LÊN VÀ CẮT QUA LIMIT
       if (
-        aboveLimit &&
+        crossedUp &&
+        isRising &&
         !alerting &&
         now - lastAlertTime >= COOLDOWN
       ) {
@@ -90,7 +86,7 @@ export function useNoiseMeter() {
         lastAlertTime = now;
 
         if (navigator.vibrate) {
-          navigator.vibrate(2000); // rung đúng 2s
+          navigator.vibrate(2000);
         }
 
         alertTimeout = setTimeout(() => {
@@ -98,9 +94,9 @@ export function useNoiseMeter() {
         }, ALERT_DURATION);
       }
 
-      // ===== UI =====
-      setDb(Math.round(smoothDb));
+      lastDb = smoothDb;
 
+      setDb(Math.round(smoothDb));
       rafRef.current = requestAnimationFrame(update);
     };
 
