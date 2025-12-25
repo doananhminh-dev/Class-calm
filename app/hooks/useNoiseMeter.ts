@@ -10,13 +10,6 @@ export function useNoiseMeter() {
   const rafRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  const alertingRef = useRef(false);
-  const alertTimeoutRef = useRef<any>(null);
-  const lastAlertTimeRef = useRef(0);
-
-  // ✅ NEW: theo dõi thời gian vượt ngưỡng
-  const overLimitSinceRef = useRef<number | null>(null);
-
   const start = async () => {
     if (started) return;
     setStarted(true);
@@ -35,16 +28,20 @@ export function useNoiseMeter() {
 
     const dataArray = new Uint8Array(analyser.fftSize);
 
+    // ===== REALTIME DB =====
     let smoothDb = 0;
 
-    const SMOOTHING = 0.12;
-    const VIBRATE_LIMIT = 60;
-    const NOISE_GATE = 8;
+    // ===== TINH CHỈNH =====
+    const SMOOTHING = 0.18;        // nhạy hơn hôm qua
+    const NOISE_FLOOR = 0.003;    // im lặng thật
+    const DB_SCALE = 160;         // tăng mạnh hơn
 
-    const ALERT_DURATION = 2000;
-    const COOLDOWN = 3000;
+    const LIMIT = 60;
 
-    const REQUIRED_OVER_MS = 800; // ✅ phải vượt ≥ 0.8s mới rung
+    const VIBRATE_TIME = 2000;    // rung 2s
+    const COOLDOWN = 3000;        // nghỉ 3s
+
+    let lastVibrate = 0;
 
     const update = () => {
       analyser.getByteTimeDomainData(dataArray);
@@ -56,51 +53,40 @@ export function useNoiseMeter() {
       }
 
       const rms = Math.sqrt(sum / dataArray.length);
-      const rawDb = Math.min(100, Math.max(0, rms * 110));
-      const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
 
-      smoothDb += (gatedDb - smoothDb) * SMOOTHING;
-      setDb(Math.round(smoothDb));
+      // ===== NOISE FLOOR THỰC =====
+      const effectiveRms = Math.max(0, rms - NOISE_FLOOR);
+
+      // ===== DB REALTIME (DUY NHẤT) =====
+      const realtimeDb = Math.min(
+        100,
+        Math.max(0, effectiveRms * DB_SCALE)
+      );
+
+      // ===== SMOOTH =====
+      smoothDb += (realtimeDb - smoothDb) * SMOOTHING;
 
       const now = Date.now();
-      const aboveLimit = smoothDb >= VIBRATE_LIMIT + 2;
+      const aboveLimit = smoothDb >= LIMIT;
 
-      // ===== SUSTAIN LOGIC =====
-      if (aboveLimit) {
-        if (overLimitSinceRef.current === null) {
-          overLimitSinceRef.current = now;
-        }
-      } else {
-        overLimitSinceRef.current = null;
-      }
-
-      const sustained =
-        overLimitSinceRef.current !== null &&
-        now - overLimitSinceRef.current >= REQUIRED_OVER_MS;
-
-      // ===== ALERT =====
+      // ===== RUNG NGAY KHI VƯỢT =====
       if (
-        sustained &&
-        !alertingRef.current &&
-        now - lastAlertTimeRef.current >= COOLDOWN
+        aboveLimit &&
+        !alerting &&
+        now - lastVibrate >= COOLDOWN
       ) {
-        alertingRef.current = true;
         setAlerting(true);
-        lastAlertTimeRef.current = now;
+        lastVibrate = now;
 
-        if (navigator.vibrate) {
-          navigator.vibrate([200, 100, 200]);
-        }
+        navigator.vibrate?.([300, 100, 300, 100, 300]);
 
-        if (alertTimeoutRef.current) {
-          clearTimeout(alertTimeoutRef.current);
-        }
-
-        alertTimeoutRef.current = setTimeout(() => {
-          alertingRef.current = false;
+        setTimeout(() => {
           setAlerting(false);
-        }, ALERT_DURATION);
+        }, VIBRATE_TIME);
       }
+
+      // ===== UI =====
+      setDb(Math.round(smoothDb));
 
       rafRef.current = requestAnimationFrame(update);
     };
