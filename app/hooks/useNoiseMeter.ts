@@ -5,19 +5,10 @@ import { useRef, useState } from "react";
 export function useNoiseMeter() {
   const [db, setDb] = useState(0);
   const [started, setStarted] = useState(false);
+  const [alerting, setAlerting] = useState(false);
 
-  const audioContextRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
-
-  // ===== CẤU HÌNH =====
-  const NOISE_GATE = 8;        // dưới mức này coi như im lặng
-  const SMOOTHING = 0.1;       // mượt
-  const VIBRATE_LIMIT = 60;    // ngưỡng rung
-  const HOLD_TIME = 2000;      // phải vượt 2s mới rung
-
-  let smoothDb = 0;
-  let overLimitSince: number | null = null;
-  let lastVibrate = 0;
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const start = async () => {
     if (started) return;
@@ -37,6 +28,19 @@ export function useNoiseMeter() {
 
     const dataArray = new Uint8Array(analyser.fftSize);
 
+    // ===== REALTIME =====
+    let smoothDb = 0;
+
+    const SMOOTHING = 0.2;      // nhạy
+    const VIBRATE_LIMIT = 60;  // ngưỡng
+    const NOISE_GATE = 4;      // chặn rung khi im lặng
+
+    const ALERT_DURATION = 2000; // báo 2s
+    const COOLDOWN = 3000;       // 3s báo lại nếu vẫn vượt
+
+    let lastAlertTime = 0;
+    let alertTimeout: any = null;
+
     const update = () => {
       analyser.getByteTimeDomainData(dataArray);
 
@@ -47,36 +51,38 @@ export function useNoiseMeter() {
       }
 
       const rms = Math.sqrt(sum / dataArray.length);
-      let rawDb = Math.min(100, rms * 120);
 
-      // ===== NOISE GATE =====
-      if (rawDb < NOISE_GATE) rawDb = 0;
+      // ===== dB realtime (nhạy hơn) =====
+      const rawDb = Math.min(100, Math.max(0, rms * 150));
+      const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
 
       // ===== SMOOTH =====
-      smoothDb = smoothDb + (rawDb - smoothDb) * SMOOTHING;
+      smoothDb += (gatedDb - smoothDb) * SMOOTHING;
 
       const now = Date.now();
+      const aboveLimit = smoothDb >= VIBRATE_LIMIT;
 
-      // ===== LOGIC RUNG =====
-      if (smoothDb >= VIBRATE_LIMIT) {
-        if (overLimitSince === null) {
-          overLimitSince = now;
+      // ===== LOGIC BÁO + COOLDOWN =====
+      if (
+        aboveLimit &&
+        !alerting &&
+        now - lastAlertTime >= COOLDOWN
+      ) {
+        setAlerting(true);
+        lastAlertTime = now;
+
+        if (navigator.vibrate) {
+          navigator.vibrate([200, 100, 200]);
         }
 
-        if (
-          now - overLimitSince >= HOLD_TIME &&
-          navigator.vibrate &&
-          now - lastVibrate > HOLD_TIME
-        ) {
-          navigator.vibrate(200);
-          lastVibrate = now;
-        }
-      } else {
-        // tụt xuống dưới ngưỡng → reset
-        overLimitSince = null;
+        alertTimeout = setTimeout(() => {
+          setAlerting(false);
+        }, ALERT_DURATION);
       }
 
+      // ===== UI REALTIME =====
       setDb(Math.round(smoothDb));
+
       rafRef.current = requestAnimationFrame(update);
     };
 
@@ -87,5 +93,6 @@ export function useNoiseMeter() {
     db,
     start,
     started,
+    alerting,
   };
 }
