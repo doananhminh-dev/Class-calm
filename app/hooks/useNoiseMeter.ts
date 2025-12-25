@@ -10,6 +10,11 @@ export function useNoiseMeter() {
   const rafRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
+  // ✅ dùng ref cho realtime logic
+  const alertingRef = useRef(false);
+  const alertTimeoutRef = useRef<any>(null);
+  const lastAlertTimeRef = useRef(0);
+
   const start = async () => {
     if (started) return;
     setStarted(true);
@@ -31,15 +36,12 @@ export function useNoiseMeter() {
     // ===== REALTIME =====
     let smoothDb = 0;
 
-    const SMOOTHING = 0.12;      // mượt hơn, không giật
-    const VIBRATE_LIMIT = 60;   // giữ nguyên
+    const SMOOTHING = 0.12;
+    const VIBRATE_LIMIT = 60;
     const NOISE_GATE = 8;
 
-    const ALERT_DURATION = 2000; // báo 2s
-    const COOLDOWN = 3000;       // 3s báo lại nếu vẫn vượt
-
-    let lastAlertTime = 0;
-    let alertTimeout: any = null;
+    const ALERT_DURATION = 2000;
+    const COOLDOWN = 3000;
 
     const update = () => {
       analyser.getByteTimeDomainData(dataArray);
@@ -52,37 +54,39 @@ export function useNoiseMeter() {
 
       const rms = Math.sqrt(sum / dataArray.length);
 
-      // ===== dB realtime (nhạy hơn) =====
       const rawDb = Math.min(100, Math.max(0, rms * 110));
       const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
 
-      // ===== SMOOTH =====
       smoothDb += (gatedDb - smoothDb) * SMOOTHING;
 
       const now = Date.now();
-      const aboveLimit = smoothDb >= VIBRATE_LIMIT;
+      const aboveLimit = smoothDb >= VIBRATE_LIMIT + 2; // ✅ biên an toàn
 
-      // ===== LOGIC BÁO + COOLDOWN =====
+      // ===== LOGIC BÁO (ĐÃ FIX) =====
       if (
         aboveLimit &&
-        !alerting &&
-        now - lastAlertTime >= COOLDOWN
+        !alertingRef.current &&
+        now - lastAlertTimeRef.current >= COOLDOWN
       ) {
+        alertingRef.current = true;
         setAlerting(true);
-        lastAlertTime = now;
+        lastAlertTimeRef.current = now;
 
         if (navigator.vibrate) {
           navigator.vibrate([200, 100, 200]);
         }
 
-        alertTimeout = setTimeout(() => {
+        if (alertTimeoutRef.current) {
+          clearTimeout(alertTimeoutRef.current);
+        }
+
+        alertTimeoutRef.current = setTimeout(() => {
+          alertingRef.current = false;
           setAlerting(false);
         }, ALERT_DURATION);
       }
 
-      // ===== UI REALTIME =====
       setDb(Math.round(smoothDb));
-
       rafRef.current = requestAnimationFrame(update);
     };
 
