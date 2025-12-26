@@ -85,8 +85,12 @@ export default function ClassifyPage() {
 
   /* ====== ÂM THANH + RUNG ====== */
   const [dbLimit, setDbLimit] = useState(60);
-  const { db: currentDb, start: startNoiseMeter, started: noiseStarted } =
-    useNoiseMeter();
+  const {
+    db: currentDb,
+    start: startNoiseMeter,
+    stop: stopNoiseMeter,
+    started: noiseStarted,
+  } = useNoiseMeter();
   const [isNoiseExceeded, setIsNoiseExceeded] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
 
@@ -232,7 +236,7 @@ export default function ClassifyPage() {
               </div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent">
                 ClassiFy
-              </h1>
+             h1>
             </div>
 
             <div className="flex items-center gap-3">
@@ -294,6 +298,7 @@ export default function ClassifyPage() {
               setDbLimit={setDbLimit}
               started={noiseStarted}
               start={startNoiseMeter}
+              stop={stopNoiseMeter}
               isNoiseExceeded={isNoiseExceeded}
             />
           </div>
@@ -331,6 +336,7 @@ interface NoiseMonitorProps {
   setDbLimit: (value: number) => void;
   started: boolean;
   start: () => void | Promise<void>;
+  stop: () => void;
   isNoiseExceeded: boolean;
 }
 
@@ -340,6 +346,7 @@ function NoiseMonitorWithControls({
   setDbLimit,
   started,
   start,
+  stop,
   isNoiseExceeded,
 }: NoiseMonitorProps) {
   const minLimit = 30;
@@ -355,6 +362,11 @@ function NoiseMonitorWithControls({
 
   const percent = Math.min(100, Math.max(0, db));
 
+  const handleToggle = () => {
+    if (!started) start();
+    else stop();
+  };
+
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6">
       <div className="flex items-center justify-between gap-4">
@@ -363,19 +375,19 @@ function NoiseMonitorWithControls({
             Giám Sát Âm Thanh Lớp Học
           </h2>
           <p className="text-xs md:text-sm text-gray-500">
-            Bật mic để đo mức ồn theo thời gian thực và đặt ngưỡng dB cho lớp.
+            Bật/tắt mic để đo mức ồn theo thời gian thực và đặt ngưỡng dB cho
+            lớp.
           </p>
         </div>
         <button
-          onClick={start}
-          disabled={started}
+          onClick={handleToggle}
           className={`px-4 py-2 rounded-full text-sm font-medium shadow ${
             started
-              ? "bg-gray-200 text-gray-500 cursor-default"
+              ? "bg-red-500 text-white hover:bg-red-600"
               : "bg-gradient-to-r from-purple-500 to-violet-600 text-white hover:brightness-110"
           }`}
         >
-          {started ? "Đang đo âm thanh" : "Bắt đầu đo"}
+          {started ? "Tắt đo" : "Bắt đầu đo"}
         </button>
       </div>
 
@@ -463,10 +475,11 @@ function NoiseMonitorWithControls({
   );
 }
 
-// Shared audio context
+// Shared audio context + stream
 let sharedAudioContext: AudioContext | null = null;
 let sharedAnalyser: AnalyserNode | null = null;
 let sharedRAF: number | null = null;
+let sharedStream: MediaStream | null = null;
 
 function useNoiseMeter() {
   const [db, setDb] = useState(0);
@@ -481,6 +494,15 @@ function useNoiseMeter() {
         cancelAnimationFrame(sharedRAF);
         sharedRAF = null;
       }
+      if (sharedStream) {
+        sharedStream.getTracks().forEach((t) => t.stop());
+        sharedStream = null;
+      }
+      if (sharedAudioContext) {
+        sharedAudioContext.close();
+        sharedAudioContext = null;
+        sharedAnalyser = null;
+      }
     };
   }, []);
 
@@ -490,6 +512,7 @@ function useNoiseMeter() {
 
     if (!sharedAudioContext || !sharedAnalyser) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      sharedStream = stream;
 
       const Ctx =
         (window as any).AudioContext || (window as any).webkitAudioContext;
@@ -550,7 +573,24 @@ function useNoiseMeter() {
     }
   };
 
-  return { db, start, started };
+  const stop = () => {
+    setStarted(false);
+    if (sharedRAF !== null) {
+      cancelAnimationFrame(sharedRAF);
+      sharedRAF = null;
+    }
+    if (sharedStream) {
+      sharedStream.getTracks().forEach((t) => t.stop());
+      sharedStream = null;
+    }
+    if (sharedAudioContext) {
+      sharedAudioContext.close();
+      sharedAudioContext = null;
+      sharedAnalyser = null;
+    }
+  };
+
+  return { db, start, stop, started };
 }
 
 /* ========== SCOREBOARD (ĐIỂM SỐ + GIỌNG NÓI) ========== */
@@ -584,6 +624,7 @@ function ScoreboardPage({
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
   const [voiceError, setVoiceError] = useState("");
+  const recognitionRef = useRef<any>(null);
 
   const parseVoiceCommand = (raw: string) => {
     const activeFallback = activeClass;
@@ -593,7 +634,7 @@ function ScoreboardPage({
     }
 
     let text = raw.toLowerCase();
-    // Bỏ dấu tiếng Việt cho dễ match
+    // Bỏ dấu tiếng Việt
     text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     text = text.replace(/\s+/g, " ").trim();
 
@@ -660,7 +701,6 @@ function ScoreboardPage({
       ),
     );
 
-    // Tự động chuyển sang lớp nhận lệnh (nếu khác lớp đang mở)
     if (targetClass.id !== activeClass?.id) {
       setActiveClassId(targetClass.id);
     }
@@ -677,7 +717,7 @@ function ScoreboardPage({
     setVoiceError("");
   };
 
-  const handleVoiceClick = () => {
+  const handleVoiceToggle = () => {
     if (typeof window === "undefined") return;
 
     const w = window as any;
@@ -689,11 +729,22 @@ function ScoreboardPage({
       return;
     }
 
+    // Nếu đang nghe -> tắt
+    if (listening) {
+      recognitionRef.current?.stop?.();
+      recognitionRef.current = null;
+      setListening(false);
+      return;
+    }
+
+    // Bắt đầu nghe 1 câu
     setVoiceError("");
     const rec = new SR();
+    recognitionRef.current = rec;
     rec.lang = "vi-VN";
     rec.continuous = false;
     rec.interimResults = false;
+    if ("maxAlternatives" in rec) rec.maxAlternatives = 3;
 
     rec.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript as string;
@@ -706,17 +757,19 @@ function ScoreboardPage({
       console.error("Voice error", event);
       setVoiceError("Không nhận diện được, hãy thử lại và nói rõ ràng.");
       setListening(false);
+      recognitionRef.current = null;
     };
 
     rec.onend = () => {
       setListening(false);
+      recognitionRef.current = null;
     };
 
     setListening(true);
     rec.start();
   };
 
-  // ====== CHỨC NĂNG ĐIỂM THÔNG THƯỜNG ======
+  // ====== ĐIỂM SỐ THÔNG THƯỜNG ======
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -989,14 +1042,14 @@ function ScoreboardPage({
         <div className="flex flex-col items-end gap-1">
           <button
             type="button"
-            onClick={handleVoiceClick}
+            onClick={handleVoiceToggle}
             className={`px-3 py-1.5 rounded-full text-xs md:text-sm font-medium border ${
               listening
                 ? "bg-red-50 border-red-200 text-red-600"
                 : "bg-purple-600 border-purple-600 text-white"
             }`}
           >
-            {listening ? "Đang lắng nghe..." : "Nhấn để nói"}
+            {listening ? "Tắt nghe giọng nói" : "Nhấn để nói"}
           </button>
           {lastTranscript && (
             <span className="text-[11px] text-gray-500">
