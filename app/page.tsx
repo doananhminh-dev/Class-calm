@@ -454,7 +454,7 @@ function NoiseMonitorWithControls({
             <li>
               Khi mức ồn vượt quá ngưỡng, trạng thái sẽ chuyển sang{" "}
               <span className="font-medium text-red-600">Vượt ngưỡng</span> và
-              thiết bị sẽ rung trong 2 giây.
+              thiết bị sẽ rung trong 2 giây (cooldown 3s).
             </li>
           </ul>
         </div>
@@ -553,7 +553,7 @@ function useNoiseMeter() {
   return { db, start, started };
 }
 
-/* ========== SCOREBOARD (ĐIỂM SỐ) ========== */
+/* ========== SCOREBOARD (ĐIỂM SỐ + GIỌNG NÓI) ========== */
 
 interface ScoreboardProps {
   classes: ClassRoom[];
@@ -579,6 +579,144 @@ function ScoreboardPage({
 }: ScoreboardProps) {
   const activeClass =
     classes.find((c) => c.id === activeClassId) || classes[0] || null;
+
+  // ====== GIỌNG NÓI ======
+  const [listening, setListening] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState("");
+  const [voiceError, setVoiceError] = useState("");
+
+  const parseVoiceCommand = (raw: string) => {
+    const activeFallback = activeClass;
+    if (!classes.length) {
+      setVoiceError("Chưa có lớp nào để cộng điểm.");
+      return;
+    }
+
+    let text = raw.toLowerCase();
+    // Bỏ dấu tiếng Việt cho dễ match
+    text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    text = text.replace(/\s+/g, " ").trim();
+
+    let sign: 1 | -1 | null = null;
+    if (text.includes("tru ")) sign = -1;
+    if (text.includes("cong ")) sign = 1;
+    if (sign === null) {
+      setVoiceError(
+        'Không nghe rõ "cộng" hay "trừ". Ví dụ: "lớp 6A2 nhóm A cộng 5 điểm".',
+      );
+      return;
+    }
+
+    const numMatch = text.match(/(\d+)/);
+    let amount = numMatch ? parseInt(numMatch[1], 10) : 1;
+    if (!Number.isFinite(amount) || amount <= 0) amount = 1;
+
+    let targetClass: ClassRoom | null = null;
+    for (const c of classes) {
+      if (text.includes(c.name.toLowerCase())) {
+        targetClass = c;
+        break;
+      }
+    }
+    if (!targetClass) targetClass = activeFallback;
+    if (!targetClass) {
+      setVoiceError(
+        "Không xác định được lớp. Hãy tạo ít nhất 1 lớp và chọn lớp đó.",
+      );
+      return;
+    }
+
+    let targetGroup: Group | null = null;
+    for (const g of targetClass.groups) {
+      const full = g.name.toLowerCase(); // "nhóm a"
+      const short = full.replace("nhom", "").replace("nhóm", "").trim();
+      if (text.includes(full) || (short && text.includes(short))) {
+        targetGroup = g;
+        break;
+      }
+    }
+    if (!targetGroup) {
+      targetGroup = targetClass.groups[0] || null;
+    }
+    if (!targetGroup) {
+      setVoiceError("Lớp này chưa có nhóm nào để cộng điểm.");
+      return;
+    }
+
+    const delta = sign * amount;
+
+    setClasses((prev) =>
+      prev.map((c) =>
+        c.id === targetClass!.id
+          ? {
+              ...c,
+              groups: c.groups.map((g) =>
+                g.id === targetGroup!.id
+                  ? { ...g, score: g.score + delta }
+                  : g,
+              ),
+            }
+          : c,
+      ),
+    );
+
+    // Tự động chuyển sang lớp nhận lệnh (nếu khác lớp đang mở)
+    if (targetClass.id !== activeClass?.id) {
+      setActiveClassId(targetClass.id);
+    }
+
+    onLog({
+      classId: targetClass.id,
+      groupId: targetGroup.id,
+      memberId: null,
+      change: delta,
+      reason: `Giọng nói: "${raw}"`,
+      type: "group",
+    });
+
+    setVoiceError("");
+  };
+
+  const handleVoiceClick = () => {
+    if (typeof window === "undefined") return;
+
+    const w = window as any;
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SR) {
+      setVoiceError(
+        "Trình duyệt không hỗ trợ nhận diện giọng nói (nên dùng Chrome hoặc Edge).",
+      );
+      return;
+    }
+
+    setVoiceError("");
+    const rec = new SR();
+    rec.lang = "vi-VN";
+    rec.continuous = false;
+    rec.interimResults = false;
+
+    rec.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript as string;
+      const clean = transcript.trim();
+      setLastTranscript(clean);
+      parseVoiceCommand(clean);
+    };
+
+    rec.onerror = (event: any) => {
+      console.error("Voice error", event);
+      setVoiceError("Không nhận diện được, hãy thử lại và nói rõ ràng.");
+      setListening(false);
+    };
+
+    rec.onend = () => {
+      setListening(false);
+    };
+
+    setListening(true);
+    rec.start();
+  };
+
+  // ====== CHỨC NĂNG ĐIỂM THÔNG THƯỜNG ======
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -838,6 +976,39 @@ function ScoreboardPage({
         </div>
       </div>
 
+      {/* Voice control card */}
+      <div className="rounded-2xl bg-white/70 border border-purple-100 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div className="text-xs md:text-sm text-gray-600">
+          Cộng/Trừ điểm nhóm bằng giọng nói.
+          <br />
+          <span className="text-[11px] text-gray-500">
+            Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2 nhóm
+            B trừ 2 điểm&quot;.
+          </span>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={handleVoiceClick}
+            className={`px-3 py-1.5 rounded-full text-xs md:text-sm font-medium border ${
+              listening
+                ? "bg-red-50 border-red-200 text-red-600"
+                : "bg-purple-600 border-purple-600 text-white"
+            }`}
+          >
+            {listening ? "Đang lắng nghe..." : "Nhấn để nói"}
+          </button>
+          {lastTranscript && (
+            <span className="text-[11px] text-gray-500">
+              Câu lệnh gần nhất: &quot;{lastTranscript}&quot;
+            </span>
+          )}
+          {voiceError && (
+            <span className="text-[11px] text-red-500">{voiceError}</span>
+          )}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-gray-700">
           Lớp đang chọn:{" "}
@@ -906,7 +1077,8 @@ function ScoreboardPage({
 
               {group.members.length === 0 ? (
                 <p className="text-xs text-gray-400">
-                  Chưa có học sinh. Nhấn &quot;+ Thêm học sinh&quot; để bắt đầu.
+                  Chưa có học sinh. Nhấn &quot;+ Thêm học sinh&quot; để bắt
+                  đầu.
                 </p>
               ) : (
                 <div className="flex flex-col gap-2 max-h-52 overflow-y-auto pr-1">
