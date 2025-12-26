@@ -100,7 +100,7 @@ export default function ClassifyPage() {
     setIsMicActive(noiseStarted);
   }, [noiseStarted]);
 
-  // Hysteresis tránh nhấp nháy khi dB sát ngưỡng
+  // Hysteresis tránh nhấp nháy
   useEffect(() => {
     const MARGIN = 2;
     setIsNoiseExceeded((prev) => {
@@ -635,7 +635,7 @@ function ScoreboardPage({
       .replace(/\s+/g, " ")
       .trim();
 
-  // Fallback parser cũ nếu AI fail
+  // Fallback parser (dùng nếu AI lỗi)
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
       setVoiceError("Chưa có lớp nào để cộng điểm.");
@@ -645,17 +645,23 @@ function ScoreboardPage({
     let text = normalize(raw);
 
     let sign: 1 | -1 | null = null;
-    if (text.includes("tru ")) sign = -1;
-    if (text.includes("cong ")) sign = 1;
+    // linh hoạt hơn: chỉ cần chứa "cong" hoặc "tru"
+    if (text.includes("tru")) sign = -1;
+    if (text.includes("cong") || text.includes("con ")) sign = 1;
+
     if (sign === null) {
       setVoiceError(
-        'Không nghe rõ "cộng" hay "trừ". Ví dụ: "lớp 6A2 nhóm A cộng 5 điểm".',
+        'Không nhận ra "cộng" hay "trừ". Hãy nói rõ: "lớp 6A2 nhóm A cộng 5 điểm".',
       );
       return;
     }
 
-    const numMatch = text.match(/(\d+)/);
-    let amount = numMatch ? parseInt(numMatch[1], 10) : 1;
+    // Lấy SỐ CUỐI CÙNG trong câu, để tránh nhầm số lớp 6A2
+    const numMatches = text.match(/\d+/g);
+    let amount = 1;
+    if (numMatches && numMatches.length > 0) {
+      amount = parseInt(numMatches[numMatches.length - 1], 10); // số cuối
+    }
     if (!Number.isFinite(amount) || amount <= 0) amount = 1;
 
     let targetClass: ClassRoom | null =
@@ -871,7 +877,7 @@ function ScoreboardPage({
     rec.start();
   };
 
-  // ====== ĐIỂM SỐ THÔNG THƯỜNG ======
+  /* ====== ĐIỂM SỐ THÔNG THƯỜNG ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
