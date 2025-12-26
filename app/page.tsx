@@ -236,7 +236,7 @@ export default function ClassifyPage() {
               </div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent">
                 ClassiFy
-             h1>
+            </h1>
             </div>
 
             <div className="flex items-center gap-3">
