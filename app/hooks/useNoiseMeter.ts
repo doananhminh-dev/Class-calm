@@ -2,109 +2,80 @@
 
 import { useRef, useState } from "react";
 
-export function useNoiseMeter() {
+export function useNoiseMeter(limit: number) {
   const [db, setDb] = useState(0);
   const [started, setStarted] = useState(false);
   const [alerting, setAlerting] = useState(false);
 
-  const rafRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  // ===== REALTIME STATE (KHÔNG PEAK) =====
+  const smoothDbRef = useRef(0);
+  const lastLimitRef = useRef(limit);
 
   const start = async () => {
     if (started) return;
     setStarted(true);
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-      },
-    });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
     const audioContext = new AudioContext();
+    await audioContext.resume();
     audioContextRef.current = audioContext;
-    if (audioContext.state !== "running") await audioContext.resume();
 
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 2048;
+    analyserRef.current = analyser;
 
     const source = audioContext.createMediaStreamSource(stream);
     source.connect(analyser);
 
-    const dataArray = new Uint8Array(analyser.fftSize);
+    dataArrayRef.current = new Uint8Array(analyser.fftSize);
 
-    // ===== CONFIG =====
-    let smoothDb = 0;
-    let lastDb = 0;
-
-    let armed = false; // 🔥 CHỐNG RUNG BẬY KHI ĐỔI LIMIT
-
-    const NOISE_FLOOR = 0.0006;
-    const DB_SCALE = 220;
-    const SMOOTHING = 0.28;
-
-    const VIBRATE_LIMIT = 60;
-    const HYSTERESIS = 5; // db phải tụt thấp hơn limit ít nhất 5db
-
-    const ALERT_DURATION = 2000;
-    const COOLDOWN = 3000;
-
-    let lastAlertTime = 0;
-    let alertTimeout: any = null;
+    const SMOOTHING = 0.2;   // NHẠY HƠN
+    const NOISE_GATE = 6;   // chặn noise nền
 
     const update = () => {
-      analyser.getByteTimeDomainData(dataArray);
+      if (!analyserRef.current || !dataArrayRef.current) return;
+
+      analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
 
       let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        const v = (dataArray[i] - 128) / 128;
+      for (let i = 0; i < dataArrayRef.current.length; i++) {
+        const v = (dataArrayRef.current[i] - 128) / 128;
         sum += v * v;
       }
 
-      const rms = Math.sqrt(sum / dataArray.length);
-      const effectiveRms = Math.max(0, rms - NOISE_FLOOR);
+      const rms = Math.sqrt(sum / dataArrayRef.current.length);
 
-      const realtimeDb = Math.min(
-        100,
-        Math.max(0, effectiveRms * DB_SCALE)
-      );
+      // ===== dB REALTIME (NHẠY) =====
+      let rawDb = Math.min(100, rms * 140);
+      if (rawDb < NOISE_GATE) rawDb = 0;
 
-      smoothDb += (realtimeDb - smoothDb) * SMOOTHING;
+      // ===== SMOOTH NHẸ =====
+      smoothDbRef.current +=
+        (rawDb - smoothDbRef.current) * SMOOTHING;
 
-      const now = Date.now();
+      const realtimeDb = Math.round(smoothDbRef.current);
 
-      // ===== ARMING LOGIC =====
-      if (smoothDb < VIBRATE_LIMIT - HYSTERESIS) {
-        armed = true;
+      // ===== FIX LỖI ĐỔI LIMIT =====
+      if (limit !== lastLimitRef.current) {
+        smoothDbRef.current = 0;
+        setDb(0);
+        setAlerting(false);
+        lastLimitRef.current = limit;
+        rafRef.current = requestAnimationFrame(update);
+        return;
       }
 
-      const crossedUp =
-        armed &&
-        lastDb < VIBRATE_LIMIT &&
-        smoothDb >= VIBRATE_LIMIT &&
-        smoothDb > lastDb;
+      // ===== ALERT THEO REALTIME =====
+      setAlerting(realtimeDb >= limit);
 
-      if (
-        crossedUp &&
-        !alerting &&
-        now - lastAlertTime >= COOLDOWN
-      ) {
-        setAlerting(true);
-        lastAlertTime = now;
-        armed = false; // phải tụt xuống lại mới rung tiếp
-
-        if (navigator.vibrate) {
-          navigator.vibrate(2000);
-        }
-
-        alertTimeout = setTimeout(() => {
-          setAlerting(false);
-        }, ALERT_DURATION);
-      }
-
-      lastDb = smoothDb;
-      setDb(Math.round(smoothDb));
+      // ===== UI =====
+      setDb(realtimeDb);
 
       rafRef.current = requestAnimationFrame(update);
     };
@@ -113,9 +84,9 @@ export function useNoiseMeter() {
   };
 
   return {
-    db,
+    db,         // db realtime hiển thị
+    alerting,   // dùng để bật màu đỏ
     start,
     started,
-    alerting,
   };
 }
