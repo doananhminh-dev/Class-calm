@@ -325,7 +325,7 @@ export default function ClassifyPage() {
         )}
       </main>
 
-      {/* Chữ nhỏ góc phải dưới */}
+      {/* Dev signature */}
       <div className="fixed bottom-2 right-4 text-[11px] text-gray-400 opacity-80 select-none">
         Dev: AnhMinh
       </div>
@@ -629,6 +629,7 @@ function ScoreboardPage({
   // ====== GIỌNG NÓI + AI GROQ ======
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
+  const [pendingTranscript, setPendingTranscript] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
@@ -660,7 +661,7 @@ function ScoreboardPage({
       return;
     }
 
-    // Lấy SỐ CUỐI CÙNG trong câu (tránh lấy số lớp như 6 trong 6A2)
+    // Lấy SỐ CUỐI CÙNG trong câu (tránh lấy số lớp 6A2)
     const numMatches = text.match(/\d+/g);
     let amount = 1;
     if (numMatches && numMatches.length > 0) {
@@ -680,7 +681,7 @@ function ScoreboardPage({
 
     let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
-      const full = normalize(g.name);
+      const full = normalize(g.name); // "nhom a"
       const short = full.replace("nhom ", "");
       if (text.includes(full) || (short && text.includes(short))) {
         targetGroup = g;
@@ -725,11 +726,11 @@ function ScoreboardPage({
       type: "group",
     });
 
+    setLastTranscript(raw);
     setVoiceError("");
   };
 
   const handleTranscriptWithAI = async (raw: string) => {
-    setLastTranscript(raw);
     setVoiceError("");
 
     const classesForAi = classes.map((c) => ({
@@ -822,6 +823,7 @@ function ScoreboardPage({
         type: "group",
       });
 
+      setLastTranscript(raw);
       setVoiceError("");
     } catch (err) {
       console.error("Lỗi gọi /api/voice-command:", err);
@@ -852,6 +854,7 @@ function ScoreboardPage({
     }
 
     setVoiceError("");
+    setPendingTranscript("");
     const rec = new SR();
     recognitionRef.current = rec;
     rec.lang = "vi-VN";
@@ -862,7 +865,9 @@ function ScoreboardPage({
     rec.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript as string;
       const clean = transcript.trim();
-      handleTranscriptWithAI(clean);
+      setPendingTranscript(clean);
+      setListening(false);
+      recognitionRef.current = null;
     };
 
     rec.onerror = (event: any) => {
@@ -1141,37 +1146,72 @@ function ScoreboardPage({
         </div>
       </div>
 
-      {/* Voice control card */}
-      <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-        <div className="text-xs md:text-sm text-gray-700">
-          Cộng/Trừ điểm nhóm bằng giọng nói (có AI Groq hỗ trợ phân tích).
-          <br />
-          <span className="text-[11px] text-gray-500">
-            Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2 nhóm
-            B trừ 2 điểm&quot;.
-          </span>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <button
-            type="button"
-            onClick={handleVoiceToggle}
-            className={`px-3 py-1.5 rounded-full text-xs md:text-sm font-medium border ${
-              listening
-                ? "bg-red-50 border-red-200 text-red-700"
-                : "bg-purple-600 border-purple-600 text-white"
-            }`}
-          >
-            {listening ? "Tắt nghe giọng nói" : "Nhấn để nói"}
-          </button>
-          {lastTranscript && (
+      {/* Voice control card + xác nhận */}
+      <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <div className="text-xs md:text-sm text-gray-700">
+            Cộng/Trừ điểm nhóm bằng giọng nói (có AI Groq hỗ trợ phân tích).
+            <br />
             <span className="text-[11px] text-gray-500">
-              Câu lệnh gần nhất: &quot;{lastTranscript}&quot;
+              Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2
+              nhóm B trừ 2 điểm&quot;.
             </span>
-          )}
-          {voiceError && (
-            <span className="text-[11px] text-red-500">{voiceError}</span>
-          )}
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={handleVoiceToggle}
+              className={`px-3 py-1.5 rounded-full text-xs md:text-sm font-medium border ${
+                listening
+                  ? "bg-red-50 border-red-200 text-red-700"
+                  : "bg-purple-600 border-purple-600 text-white"
+              }`}
+            >
+              {listening ? "Tắt nghe giọng nói" : "Nhấn để nói"}
+            </button>
+            {lastTranscript && (
+              <span className="text-[11px] text-gray-500">
+                Câu lệnh đã thực hiện gần nhất: &quot;{lastTranscript}&quot;
+              </span>
+            )}
+            {voiceError && (
+              <span className="text-[11px] text-red-500">{voiceError}</span>
+            )}
+          </div>
         </div>
+
+        {pendingTranscript && (
+          <div className="mt-2 rounded-xl bg-white/95 border border-purple-100 px-3 py-2 text-xs text-gray-700">
+            <div>
+              <span className="font-medium">Hệ thống nghe được:</span>{" "}
+              <span className="italic">&quot;{pendingTranscript}&quot;</span>
+            </div>
+            <p className="mt-1 text-[11px] text-gray-500">
+              Đây có đúng câu bạn muốn không? Nếu đúng, bấm &quot;Đúng, thực
+              hiện&quot; để cộng/trừ điểm.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => {
+                  handleTranscriptWithAI(pendingTranscript);
+                  setPendingTranscript("");
+                }}
+                className="px-3 py-1 rounded-full bg-purple-600 text-white text-xs font-medium hover:bg-purple-700"
+              >
+                Đúng, thực hiện
+              </button>
+              <button
+                onClick={() => {
+                  setPendingTranscript("");
+                  setVoiceError("");
+                }}
+                className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs border border-gray-300 hover:bg-gray-200"
+              >
+                Không đúng, nói lại
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between">
@@ -1182,6 +1222,8 @@ function ScoreboardPage({
           </span>
         </h3>
       </div>
+
+      {/* phần còn lại của Scoreboard (nhóm, học sinh, điểm) giữ nguyên như trước */}
 
       <div className="grid md:grid-cols-2 gap-4">
         {activeClass.groups.map((group) => (
