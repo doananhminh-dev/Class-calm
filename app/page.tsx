@@ -292,7 +292,7 @@ export default function ClassifyPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-6 py-3 rounded-lg font-medium transition-all ${
                   activeTab === tab.id
-                    ? "bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-lg shadow-purple-500/30"
+                    ? "bg-gradient-to-br from-purple-500 to-violet-600 text:white text-white shadow-lg shadow-purple-500/30"
                     : "text-gray-600 hover:bg-purple-50 hover:text-purple-700"
                 }`}
               >
@@ -800,10 +800,10 @@ function ScoreboardPage({
     }
 
     const text = normalizeText(raw);
-    const textNoSpace = text.replace(/\s+/g, "");
+    const words = text.split(" ");
 
-    // Mặc định CỘNG, chỉ TRỪ khi có "tru"
-    let sign: 1 | -1 = text.includes("tru") ? -1 : 1;
+    // Mặc định CỘNG, chỉ TRỪ khi có từ "trừ"
+    let sign: 1 | -1 = words.includes("tru") ? -1 : 1;
 
     // Lấy số CUỐI CÙNG trong câu
     const numMatches = text.match(/\d+/g);
@@ -818,7 +818,7 @@ function ScoreboardPage({
     for (const c of classes) {
       const nc = normalizeText(c.name); // "6a2"
       const ncNoSpace = nc.replace(/\s+/g, "");
-      if (text.includes(nc) || textNoSpace.includes(ncNoSpace)) {
+      if (text.includes(nc) || text.replace(/\s+/g, "").includes(ncNoSpace)) {
         targetClass = c;
         break;
       }
@@ -834,7 +834,7 @@ function ScoreboardPage({
     for (const g of targetClass.groups) {
       const ng = normalizeText(g.name); // "nhom a"
       const ngNoSpace = ng.replace(/\s+/g, "");
-      if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
+      if (text.includes(ng) || text.replace(/\s+/g, "").includes(ngNoSpace)) {
         matchedGroup = g;
         break;
       }
@@ -955,7 +955,6 @@ function ScoreboardPage({
 
       const className: string | undefined = data.className;
       const groupName: string | undefined = data.groupName;
-      const action: "add" | "subtract" = data.action || "add";
       const amount: number = data.amount && data.amount > 0 ? data.amount : 1;
 
       if (!className || !groupName) {
@@ -990,8 +989,11 @@ function ScoreboardPage({
         return;
       }
 
-      const sign: 1 | -1 = action === "subtract" ? -1 : 1;
-      const delta = sign * amount;
+      // Ưu tiên từ "trừ" trong câu nói để quyết định dấu
+      const norm = normalizeText(raw);
+      const words = norm.split(" ");
+      const localSign: 1 | -1 = words.includes("tru") ? -1 : 1;
+      const delta = localSign * amount;
 
       // Thử tìm xem có tên học sinh nào trong câu → ưu tiên CÁ NHÂN
       const memberHit = findMemberFromTranscript(raw, targetClass, targetGroup);
@@ -1037,7 +1039,7 @@ function ScoreboardPage({
         return;
       }
 
-      // Không có học sinh → CỘNG/TRỪ ĐIỂM NHÓM như trước
+      // Không có học sinh → CỘNG/TRỪ ĐIỂM NHÓM
       setClasses((prev) =>
         prev.map((c) =>
           c.id === targetClass.id
@@ -1921,7 +1923,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             onClick={() => setView("group")}
             className={`px-3 py-1 rounded-full font-medium ${
               view === "group"
-                ? "bg-white text-purple-700 shadow-sm"
+                ? "bg:white text-purple-700 shadow-sm"
                 : "text-gray-600 hover:text-purple-700"
             }`}
           >
@@ -2101,7 +2103,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
               </div>
             </div>
             <div
-              className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items-end justify-center pb-2 shadow-sm`}
+              className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items:end justify-center pb-2 shadow-sm`}
             >
               <span className="text-[11px] md:text-xs font-semibold text-gray-700">
                 Hạng {rank}
