@@ -58,19 +58,11 @@ function generateId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-// 6 nhóm: Nhóm 1–Nhóm 6
+// Mặc định mỗi lớp có 6 nhóm: Nhóm 1–Nhóm 6
 function createDefaultGroups(): Group[] {
-  const names = [
-    "Nhóm 1",
-    "Nhóm 2",
-    "Nhóm 3",
-    "Nhóm 4",
-    "Nhóm 5",
-    "Nhóm 6",
-  ];
-  return names.map((name, idx) => ({
-    id: `group-${idx + 1}-${Math.random().toString(36).slice(2, 6)}`,
-    name,
+  return Array.from({ length: 6 }, (_, idx) => ({
+    id: `group-${idx + 1}`,
+    name: `Nhóm ${idx + 1}`,
     score: 0,
     members: [],
   }));
@@ -840,7 +832,57 @@ function ScoreboardPage({
   const [voiceErrorStudent, setVoiceErrorStudent] = useState("");
   const recognitionStudentRef = useRef<any>(null);
 
-  /* ====== PARSER NHÓM (giống code gốc) ====== */
+  /* ====== HÀM CHUNG: LẤY DELTA TỪ SỐ CUỐI CÂU ======
+     - Sử dụng số cuối cùng trong câu (sau normalize)
+     - Nếu số đó có dấu '-' / '+' -> theo dấu đó
+     - Nếu không có dấu mà trước đó gần số có chữ "tru"/"trừ" -> trừ
+     - Nếu không thì coi là cộng
+  */
+
+  const computeDeltaFromTranscript = (raw: string): number => {
+    const norm = normalizeText(raw); // bỏ dấu, thường, gộp space
+
+    // Tìm TẤT CẢ các số (có thể có dấu + / - trước)
+    const regex = /[+-]?\d+/g;
+    let match: RegExpExecArray | null;
+    let lastStr: string | null = null;
+    let lastIndex = -1;
+
+    while ((match = regex.exec(norm)) !== null) {
+      lastStr = match[0];
+      lastIndex = match.index;
+    }
+
+    let sign: 1 | -1 = 1;
+    let amount = 1;
+
+    if (lastStr === null) {
+      // Không có số nào -> mặc định 1 điểm, dựa vào từ "trừ"/"tru" trong cả câu
+      sign = norm.includes("tru") ? -1 : 1;
+      amount = 1;
+    } else {
+      const n = parseInt(lastStr, 10);
+      amount = Math.abs(Number.isFinite(n) ? n : 1);
+
+      if (lastStr.startsWith("-")) {
+        // Có dấu '-' ngay trước số: -3 -> trừ 3
+        sign = -1;
+      } else if (lastStr.startsWith("+")) {
+        // Có dấu '+': +3 -> cộng 3
+        sign = 1;
+      } else {
+        // Không có dấu, kiểm tra từ "tru"/"trừ" GẦN TRƯỚC số cuối cùng
+        const rangeStart = Math.max(0, lastIndex - 10);
+        const near = norm.slice(rangeStart, lastIndex); // đoạn ngay trước số
+        if (near.includes("tru")) sign = -1;
+        else sign = 1; // mặc định cộng
+      }
+    }
+
+    return sign * amount;
+  };
+
+  /* ====== PARSER NHÓM (fallback khi AI fail) ====== */
 
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
@@ -851,15 +893,10 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    let sign: 1 | -1 = text.includes("tru") ? -1 : 1;
+    // Lấy delta theo đúng số cuối & từ "tru"
+    const delta = computeDeltaFromTranscript(raw);
 
-    const numMatches = text.match(/\d+/g);
-    let amount = 1;
-    if (numMatches && numMatches.length > 0) {
-      const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
-      if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
-    }
-
+    // Tìm lớp
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
       const nc = normalizeText(c.name);
@@ -875,6 +912,7 @@ function ScoreboardPage({
       return;
     }
 
+    // Tìm nhóm
     let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
       const ng = normalizeText(g.name);
@@ -891,8 +929,7 @@ function ScoreboardPage({
       return;
     }
 
-    const delta = sign * amount;
-
+    // Cập nhật điểm nhóm
     setClasses((prev) =>
       prev.map((c) =>
         c.id === targetClass!.id
@@ -1116,66 +1153,21 @@ function ScoreboardPage({
   };
 
   /* ====== GIỌNG NÓI HỌC SINH ====== */
-  // ĐÃ SỬA: Hỗ trợ dấu '-', chữ "trừ"/"tru"
+
   const applyStudentVoiceCommand = (raw: string) => {
     if (!classes.length) {
       setVoiceErrorStudent("Chưa có lớp nào để cộng/trừ điểm.");
       return;
     }
 
-    // Chuẩn hoá: bỏ dấu, lowercase, gộp khoảng trắng
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // ================== XÁC ĐỊNH DẤU & SỐ ĐIỂM ==================
+    // Lấy delta dựa trên số cuối cùng + "trừ"/"tru"
+    const delta = computeDeltaFromTranscript(raw);
 
-    let amount = 1;
-    let sign: 1 | -1 = 1;
-
-    // 1. Ưu tiên bắt số có thể có dấu '-' trong câu gốc
-    //    Ví dụ: "-3", "- 5"
-    const signedMatch = raw.match(/-?\d+/);
-    if (signedMatch) {
-      const n = Number(signedMatch[0]);
-      if (Number.isFinite(n) && n !== 0) {
-        amount = Math.abs(n);
-        sign = n < 0 ? -1 : 1;
-      }
-    } else {
-      // 2. Nếu không có dạng "-3", dùng số bình thường (giống code cũ)
-      const numMatches = text.match(/\d+/g);
-      if (numMatches && numMatches.length > 0) {
-        const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
-        if (Number.isFinite(lastNum) && lastNum > 0) {
-          amount = lastNum;
-        }
-      }
-    }
-
-    // 3. Nếu trong câu có từ "trừ" (sau khi bỏ dấu => "tru") thì CHẮC CHẮN là trừ
-    //    Dù trước đó có hay không có dấu '-'
-    if (text.includes("tru")) {
-      sign = -1;
-    }
-
-    // (Tuỳ chọn) Nếu hay nói "âm 3 điểm", có thể coi "âm" là trừ:
-    // if (/\bam\b/.test(text)) {
-    //   sign = -1;
-    // }
-
-    const delta = sign * amount;
-
-    if (!Number.isFinite(delta) || delta === 0) {
-      setVoiceErrorStudent(
-        "Không xác định được số điểm. Hãy nói rõ: 'cộng 3 điểm' hoặc 'trừ 2 điểm'.",
-      );
-      return;
-    }
-
-    // ================== TÌM LỚP ==================
-
+    // Tìm lớp
     let targetClass: ClassRoom | null = null;
-
     for (const c of classes) {
       const nc = normalizeText(c.name);
       const ncNoSpace = nc.replace(/\s+/g, "");
@@ -1184,16 +1176,13 @@ function ScoreboardPage({
         break;
       }
     }
-
     if (!targetClass) targetClass = activeClass || classes[0] || null;
-
     if (!targetClass) {
       setVoiceErrorStudent("Không xác định được lớp, hãy chọn lớp ở trên.");
       return;
     }
 
-    // ================== TÌM HỌC SINH ==================
-
+    // Tìm học sinh
     const hit = findMemberInClass(raw, targetClass);
     if (!hit) {
       setVoiceErrorStudent(
@@ -1202,8 +1191,7 @@ function ScoreboardPage({
       return;
     }
 
-    // ================== CẬP NHẬT ĐIỂM HS + NHÓM ==================
-
+    // Cập nhật điểm HS + nhóm
     setClasses((prev) =>
       prev.map((c) =>
         c.id === targetClass!.id
@@ -1281,7 +1269,9 @@ function ScoreboardPage({
 
     rec.onerror = (event: any) => {
       console.error("Voice error HS", event);
-      setVoiceErrorStudent("Không nhận diện được, hãy thử lại và nói rõ ràng.");
+      setVoiceErrorStudent(
+        "Không nhận diện được, hãy thử lại và nói rõ ràng.",
+      );
       setListeningStudent(false);
       recognitionStudentRef.current = null;
     };
@@ -1304,7 +1294,7 @@ function ScoreboardPage({
     const newClass: ClassRoom = {
       id: generateId("class"),
       name,
-      groups: createDefaultGroups(),
+      groups: createDefaultGroups(), // mặc định 6 nhóm: Nhóm 1–6
     };
     setClasses((prev) => [...prev, newClass]);
     setActiveClassId(newClass.id);
