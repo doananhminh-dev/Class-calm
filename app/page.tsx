@@ -77,6 +77,15 @@ function createInitialClasses(): ClassRoom[] {
   }));
 }
 
+function normalizeText(s: string) {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /* ========== MAIN PAGE ========== */
 
 export default function ClassifyPage() {
@@ -226,7 +235,9 @@ export default function ClassifyPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-violet-50">
+    <div className="relative min-h-screen bg-gradient-to-br from-purple-50 via-white to-violet-50 overflow-hidden">
+      <BackgroundThreads />
+
       <header className="glass-card sticky top-0 z-50 border-b border-purple-100/50 bg-white/80 backdrop-blur-xl">
         <div className="container mx-auto px-6">
           <div className="flex items-center justify-between py-4 border-b border-purple-100/40">
@@ -235,7 +246,7 @@ export default function ClassifyPage() {
                 <span className="text-white font-bold text-lg">C</span>
               </div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent tracking-wide">
-                class-calm
+                Class-calm
               </h1>
             </div>
 
@@ -289,7 +300,7 @@ export default function ClassifyPage() {
         </div>
       </header>
 
-      <main className="container mx-auto px-6 py-8">
+      <main className="container mx-auto px-6 py-8 relative z-10">
         {activeTab === "sound" && (
           <div className="max-w-4xl mx-auto">
             <NoiseMonitorWithControls
@@ -325,24 +336,233 @@ export default function ClassifyPage() {
         )}
       </main>
 
-      <div className="fixed bottom-2 right-4 text-[11px] text-gray-400 opacity-80 select-none">
+      {/* Dev signature */}
+      <div className="fixed bottom-2 right-4 text-[11px] text-gray-400 opacity-80 select-none z-20">
         Dev: AnhMinh
       </div>
     </div>
   );
 }
 
-/* ========== NOISE MONITOR + HOOK ========== */
+/* ========== BACKGROUND THREADS ========== */
 
-interface NoiseMonitorProps {
-  db: number;
-  dbLimit: number;
-  setDbLimit: (value: number) => void;
-  started: boolean;
-  start: () => void | Promise<void>;
-  stop: () => void;
-  isNoiseExceeded: boolean;
+function BackgroundThreads() {
+  return (
+    <>
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="thread-line thread-1" />
+        <div className="thread-line thread-2" />
+        <div className="thread-line thread-3" />
+      </div>
+
+      <style jsx global>{`
+        .thread-line {
+          position: absolute;
+          width: 2px;
+          height: 260vh;
+          background: linear-gradient(
+            to bottom,
+            rgba(168, 85, 247, 0) 0%,
+            rgba(168, 85, 247, 0.85) 35%,
+            rgba(129, 140, 248, 0.85) 60%,
+            rgba(129, 140, 248, 0) 100%
+          );
+          opacity: 0.4;
+          mix-blend-mode: screen;
+          filter: blur(0.3px);
+        }
+
+        .thread-1 {
+          left: 15%;
+          animation: threadFloat1 22s linear infinite;
+        }
+
+        .thread-2 {
+          left: 50%;
+          animation: threadFloat2 26s linear infinite;
+        }
+
+        .thread-3 {
+          left: 80%;
+          animation: threadFloat3 30s linear infinite;
+        }
+
+        @keyframes threadFloat1 {
+          0% {
+            transform: translate3d(-40%, 120%, 0) rotate(10deg);
+            opacity: 0;
+          }
+          10% {
+            opacity: 0.7;
+          }
+          80% {
+            opacity: 0.7;
+          }
+          100% {
+            transform: translate3d(20%, -140%, 0) rotate(-5deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes threadFloat2 {
+          0% {
+            transform: translate3d(0%, 120%, 0) rotate(-8deg);
+            opacity: 0;
+          }
+          15% {
+            opacity: 0.6;
+          }
+          85% {
+            opacity: 0.6;
+          }
+          100% {
+            transform: translate3d(-30%, -150%, 0) rotate(3deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes threadFloat3 {
+          0% {
+            transform: translate3d(40%, 120%, 0) rotate(6deg);
+            opacity: 0;
+          }
+          15% {
+            opacity: 0.8;
+          }
+          85% {
+            opacity: 0.8;
+          }
+          100% {
+            transform: translate3d(-10%, -160%, 0) rotate(-4deg);
+            opacity: 0;
+          }
+        }
+      `}</style>
+    </>
+  );
 }
+
+/* ========== NOISE MONITOR HOOK ========== */
+
+let sharedAudioContext: AudioContext | null = null;
+let sharedAnalyser: AnalyserNode | null = null;
+let sharedRAF: number | null = null;
+let sharedStream: MediaStream | null = null;
+
+function useNoiseMeter() {
+  const [db, setDb] = useState(0);
+  const [started, setStarted] = useState(false);
+
+  const dataArrayRef = useRef<Float32Array | null>(null);
+  const smoothDbRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      if (sharedRAF !== null) {
+        cancelAnimationFrame(sharedRAF);
+        sharedRAF = null;
+      }
+      if (sharedStream) {
+        sharedStream.getTracks().forEach((t) => t.stop());
+        sharedStream = null;
+      }
+      if (sharedAudioContext) {
+        sharedAudioContext.close();
+        sharedAudioContext = null;
+        sharedAnalyser = null;
+      }
+    };
+  }, []);
+
+  const start = async () => {
+    if (started) return;
+    setStarted(true);
+
+    if (!sharedAudioContext || !sharedAnalyser) {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      sharedStream = stream;
+
+      const Ctx =
+        (window as any).AudioContext || (window as any).webkitAudioContext;
+      sharedAudioContext = new Ctx();
+      await sharedAudioContext.resume();
+
+      const analyser = sharedAudioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      sharedAnalyser = analyser;
+
+      const source = sharedAudioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      dataArrayRef.current = new Float32Array(analyser.fftSize);
+      smoothDbRef.current = 0;
+    }
+
+    const SMOOTHING = 0.15;
+    const NOISE_GATE = 5;
+    const MAX_STEP = 3;
+
+    const update = () => {
+      if (!sharedAnalyser || !dataArrayRef.current) {
+        sharedRAF = requestAnimationFrame(update);
+        return;
+      }
+
+      const arr = dataArrayRef.current;
+      sharedAnalyser.getFloatTimeDomainData(arr);
+
+      let sum = 0;
+      for (let i = 0; i < arr.length; i++) {
+        sum += arr[i] * arr[i];
+      }
+
+      const rms = Math.sqrt(sum / arr.length);
+
+      let rawDb = rms * 120;
+      if (!isFinite(rawDb) || isNaN(rawDb)) rawDb = 0;
+      rawDb = Math.min(100, Math.max(0, rawDb));
+
+      const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
+
+      const prev = smoothDbRef.current;
+      let target = prev + (gatedDb - prev) * SMOOTHING;
+
+      if (target > prev + MAX_STEP) target = prev + MAX_STEP;
+      if (target < prev - MAX_STEP) target = prev - MAX_STEP;
+
+      smoothDbRef.current = target;
+      setDb(Math.round(target));
+
+      sharedRAF = requestAnimationFrame(update);
+    };
+
+    if (sharedRAF === null) {
+      sharedRAF = requestAnimationFrame(update);
+    }
+  };
+
+  const stop = () => {
+    setStarted(false);
+    if (sharedRAF !== null) {
+      cancelAnimationFrame(sharedRAF);
+      sharedRAF = null;
+    }
+    if (sharedStream) {
+      sharedStream.getTracks().forEach((t) => t.stop());
+      sharedStream = null;
+    }
+    if (sharedAudioContext) {
+      sharedAudioContext.close();
+      sharedAudioContext = null;
+      sharedAnalyser = null;
+    }
+    setDb(0);
+  };
+
+  return { db, start, stop, started };
+}
+
+/* ========== NOISE MONITOR UI ========== */
 
 function NoiseMonitorWithControls({
   db,
@@ -479,125 +699,6 @@ function NoiseMonitorWithControls({
   );
 }
 
-// Shared audio context + stream
-let sharedAudioContext: AudioContext | null = null;
-let sharedAnalyser: AnalyserNode | null = null;
-let sharedRAF: number | null = null;
-let sharedStream: MediaStream | null = null;
-
-function useNoiseMeter() {
-  const [db, setDb] = useState(0);
-  const [started, setStarted] = useState(false);
-
-  const dataArrayRef = useRef<Float32Array | null>(null);
-  const smoothDbRef = useRef(0);
-
-  useEffect(() => {
-    return () => {
-      if (sharedRAF !== null) {
-        cancelAnimationFrame(sharedRAF);
-        sharedRAF = null;
-      }
-      if (sharedStream) {
-        sharedStream.getTracks().forEach((t) => t.stop());
-        sharedStream = null;
-      }
-      if (sharedAudioContext) {
-        sharedAudioContext.close();
-        sharedAudioContext = null;
-        sharedAnalyser = null;
-      }
-    };
-  }, []);
-
-  const start = async () => {
-    if (started) return;
-    setStarted(true);
-
-    if (!sharedAudioContext || !sharedAnalyser) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      sharedStream = stream;
-
-      const Ctx =
-        (window as any).AudioContext || (window as any).webkitAudioContext;
-      sharedAudioContext = new Ctx();
-      await sharedAudioContext.resume();
-
-      const analyser = sharedAudioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      sharedAnalyser = analyser;
-
-      const source = sharedAudioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-
-      dataArrayRef.current = new Float32Array(analyser.fftSize);
-      smoothDbRef.current = 0;
-    }
-
-    const SMOOTHING = 0.15;
-    const NOISE_GATE = 5;
-    const MAX_STEP = 3;
-
-    const update = () => {
-      if (!sharedAnalyser || !dataArrayRef.current) {
-        sharedRAF = requestAnimationFrame(update);
-        return;
-      }
-
-      const arr = dataArrayRef.current;
-      sharedAnalyser.getFloatTimeDomainData(arr);
-
-      let sum = 0;
-      for (let i = 0; i < arr.length; i++) {
-        sum += arr[i] * arr[i];
-      }
-
-      const rms = Math.sqrt(sum / arr.length);
-
-      let rawDb = rms * 120;
-      if (!isFinite(rawDb) || isNaN(rawDb)) rawDb = 0;
-      rawDb = Math.min(100, Math.max(0, rawDb));
-
-      const gatedDb = rawDb < NOISE_GATE ? 0 : rawDb;
-
-      const prev = smoothDbRef.current;
-      let target = prev + (gatedDb - prev) * SMOOTHING;
-
-      if (target > prev + MAX_STEP) target = prev + MAX_STEP;
-      if (target < prev - MAX_STEP) target = prev - MAX_STEP;
-
-      smoothDbRef.current = target;
-      setDb(Math.round(target));
-
-      sharedRAF = requestAnimationFrame(update);
-    };
-
-    if (sharedRAF === null) {
-      sharedRAF = requestAnimationFrame(update);
-    }
-  };
-
-  const stop = () => {
-    setStarted(false);
-    if (sharedRAF !== null) {
-      cancelAnimationFrame(sharedRAF);
-      sharedRAF = null;
-    }
-    if (sharedStream) {
-      sharedStream.getTracks().forEach((t) => t.stop());
-      sharedStream = null;
-    }
-    if (sharedAudioContext) {
-      sharedAudioContext.close();
-      sharedAudioContext = null;
-      sharedAnalyser = null;
-    }
-    setDb(0);
-  };
-
-  return { db, start, stop, started };
-}
-
 /* ========== SCOREBOARD (ĐIỂM SỐ + GIỌNG NÓI + AI) ========== */
 
 interface ScoreboardProps {
@@ -631,27 +732,19 @@ function ScoreboardPage({
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  const normalize = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
       setVoiceError("Chưa có lớp nào để cộng điểm.");
       return;
     }
 
-    const normText = normalize(raw);
+    const normText = normalizeText(raw);
     const normNoSpace = normText.replace(/\s+/g, "");
 
-    // Mặc định CỘNG, chỉ TRỪ khi có "tru"
+    // MẶC ĐỊNH CỘNG, chỉ TRỪ khi có "tru"
     let sign: 1 | -1 = normText.includes("tru") ? -1 : 1;
 
-    // Số CUỐI CÙNG trong câu
+    // Lấy số CUỐI CÙNG trong câu
     const numMatches = normText.match(/\d+/g);
     let amount = 1;
     if (numMatches && numMatches.length > 0) {
@@ -659,11 +752,12 @@ function ScoreboardPage({
       if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
     }
 
-    // Tìm lớp: khớp cả "6a2" lẫn khi nói "6 a 2"
+    // Tìm lớp
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
-      const nc = normalize(c.name); // "6a2"
+      const nc = normalizeText(c.name); // "6a2"
       const ncNoSpace = nc.replace(/\s+/g, "");
+
       if (normText.includes(nc) || normNoSpace.includes(ncNoSpace)) {
         targetClass = c;
         break;
@@ -675,10 +769,10 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm nhóm: chỉ match "nhom a/b/c/d" đầy đủ
+    // Tìm nhóm: phải match "nhom a/b/c/d" đầy đủ
     let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
-      const ng = normalize(g.name); // "nhom a"
+      const ng = normalizeText(g.name); // "nhom a"
       const ngNoSpace = ng.replace(/\s+/g, ""); // "nhoma"
       if (normText.includes(ng) || normNoSpace.includes(ngNoSpace)) {
         targetGroup = g;
@@ -769,7 +863,7 @@ function ScoreboardPage({
 
       const targetClass =
         classes.find(
-          (c) => normalize(c.name) === normalize(className as string),
+          (c) => normalizeText(c.name) === normalizeText(className as string),
         ) || activeClass;
       if (!targetClass) {
         setVoiceError(
@@ -781,7 +875,7 @@ function ScoreboardPage({
 
       const targetGroup =
         targetClass.groups.find(
-          (g) => normalize(g.name) === normalize(groupName as string),
+          (g) => normalizeText(g.name) === normalizeText(groupName as string),
         ) || null;
 
       if (!targetGroup) {
@@ -884,8 +978,6 @@ function ScoreboardPage({
     setListening(true);
     rec.start();
   };
-
-  /* ====== ĐIỂM SỐ THÔNG THƯỜNG ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -1149,7 +1241,7 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Cộng/Trừ điểm nhóm bằng giọng nói (AI Groq phân tích).
+            Cộng/Trừ điểm nhóm bằng giọng nói (có AI Groq hỗ trợ phân tích).
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2
@@ -1170,7 +1262,7 @@ function ScoreboardPage({
             </button>
             {lastTranscript && (
               <span className="text-[11px] text-gray-500">
-                Câu lệnh đã thực hiện gần nhất: &quot;{lastTranscript}&quot;
+                Đã thực hiện: &quot;{lastTranscript}&quot;
               </span>
             )}
             {voiceError && (
