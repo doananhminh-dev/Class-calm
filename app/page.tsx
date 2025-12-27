@@ -609,7 +609,7 @@ function NoiseMonitorWithControls({
   };
 
   return (
-    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg:white/90 bg-white/90 border border-purple-100 shadow-xl shadow-purple-100/60">
+    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg-white/90 border border-purple-100 shadow-xl shadow-purple-100/60">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-lg md:text-xl font-semibold text-purple-800">
@@ -751,7 +751,7 @@ function ScoreboardPage({
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  /* ====== HÀM TÌM HỌC SINH TRONG LỚP TỪ CÂU LỆNH THOẠI ====== */
+  /* ====== TÌM HỌC SINH TỪ CÂU LỆNH THOẠI (KHÔNG ĐỤNG TỚI DẤU + / -) ====== */
   const findMemberInClass = (
     raw: string,
     cls: ClassRoom,
@@ -759,14 +759,15 @@ function ScoreboardPage({
   ): { member: Member; group: Group } | null => {
     const text = normalizeText(raw);
 
-    const groupsToSearch: Group[] = preferredGroupId
+    // Nếu có nhóm được nhắc tới → ưu tiên tìm trong nhóm đó trước
+    const groupsOrdered: Group[] = preferredGroupId
       ? [
           ...cls.groups.filter((g) => g.id === preferredGroupId),
           ...cls.groups.filter((g) => g.id !== preferredGroupId),
         ]
       : cls.groups;
 
-    for (const g of groupsToSearch) {
+    for (const g of groupsOrdered) {
       for (const m of g.members) {
         const nm = normalizeText(m.name);
         if (!nm) continue;
@@ -779,7 +780,7 @@ function ScoreboardPage({
     return null;
   };
 
-  /* ====== PARSER LOCAL (KHI KHÔNG DÙNG AI HOẶC AI LỖI) ====== */
+  /* ====== PARSER DỰ PHÒNG (KHÔNG DÙNG AI) — GIỮ NGUYÊN DẤU NHƯ NHÓM ====== */
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
       setVoiceError("Chưa có lớp nào để cộng điểm.");
@@ -789,7 +790,7 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Mặc định CỘNG, chỉ TRỪ khi có "tru" (giống code gốc, áp dụng luôn cho cá nhân)
+    // GIỮ NGUYÊN LOGIC CŨ: mặc định CỘNG, chỉ TRỪ khi có "tru"
     let sign: 1 | -1 = text.includes("tru") ? -1 : 1;
 
     // Lấy số CUỐI CÙNG trong câu
@@ -800,7 +801,7 @@ function ScoreboardPage({
       if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
     }
 
-    // Tìm lớp
+    // Tìm lớp (giữ nguyên)
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
       const nc = normalizeText(c.name); // "6a2"
@@ -816,7 +817,7 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm nhóm (nếu có nói)
+    // Tìm nhóm (giữ nguyên)
     let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
       const ng = normalizeText(g.name); // "nhom a"
@@ -829,7 +830,7 @@ function ScoreboardPage({
 
     const delta = sign * amount;
 
-    // Thử tìm xem có tên học sinh nào trong câu → ƯU TIÊN CÁ NHÂN
+    // ===== ƯU TIÊN CỘNG/TRỪ ĐIỂM CÁ NHÂN NẾU CÓ TÊN HỌC SINH =====
     const memberHit = findMemberInClass(
       raw,
       targetClass,
@@ -877,7 +878,7 @@ function ScoreboardPage({
       return;
     }
 
-    // Không có tên học sinh → xử lý ĐIỂM NHÓM như code gốc
+    // ===== KHÔNG THẤY HỌC SINH → XỬ LÝ NHÓM Y HỆT CODE GỐC =====
     if (!targetGroup) {
       setVoiceError(
         'Không xác định được nhóm. Hãy nói rõ: "nhóm A", "nhóm B", "nhóm C"...',
@@ -917,7 +918,7 @@ function ScoreboardPage({
     setVoiceError("");
   };
 
-  /* ====== DÙNG AI (/api/voice-command) ====== */
+  /* ====== DÙNG AI (/api/voice-command) — GIỮ NGUYÊN LOGIC DẤU CỦA NHÓM ====== */
   const handleTranscriptWithAI = async (raw: string) => {
     setVoiceError("");
 
@@ -982,11 +983,11 @@ function ScoreboardPage({
         return;
       }
 
-      // GIỮ NGUYÊN LOGIC DẤU CHO NHÓM: dựa vào action của AI
+      // GIỮ NGUYÊN LOGIC DẤU CỦA NHÓM: dựa vào action
       const sign: 1 | -1 = action === "subtract" ? -1 : 1;
       const delta = sign * amount;
 
-      // Thử xem có học sinh nào xuất hiện trong câu → ƯU TIÊN CÁ NHÂN:
+      // Thử xem có học sinh nào trong câu → ƯU TIÊN CÁ NHÂN, DÙNG CHUNG DELTA
       const memberHit = findMemberInClass(raw, targetClass, targetGroup.id);
 
       if (memberHit) {
@@ -1030,7 +1031,7 @@ function ScoreboardPage({
         return;
       }
 
-      // KHÔNG CÓ HỌC SINH → ĐIỂM NHÓM đúng như code gốc
+      // KHÔNG TÊN HỌC SINH → GIỮ NGUYÊN CODE NHÓM
       setClasses((prev) =>
         prev.map((c) =>
           c.id === targetClass.id
@@ -1122,7 +1123,7 @@ function ScoreboardPage({
     rec.start();
   };
 
-  /* ====== CÁC HÀM QUẢN LÝ LỚP / NHÓM / THÀNH VIÊN (GIỮ NGUYÊN) ====== */
+  /* ====== QUẢN LÝ LỚP / NHÓM / THÀNH VIÊN (GIỮ NGUYÊN) ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -1345,7 +1346,7 @@ function ScoreboardPage({
     );
   }
 
-  /* ====== JSX HIỂN THỊ GIỮ NGUYÊN NHƯ CODE GỐC ====== */
+  /* ====== JSX Y NHƯ CODE CŨ ====== */
 
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60">
@@ -1388,12 +1389,11 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Cộng/Trừ điểm nhóm hoặc điểm cá nhân bằng giọng nói (AI Groq + parser
-            dự phòng).
+            Cộng/Trừ điểm nhóm bằng giọng nói (AI Groq + parser dự phòng).
             <br />
             <span className="text-[11px] text-gray-500">
-              Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot;, &quot;7A2 nhóm B trừ 2
-              điểm&quot; hoặc &quot;lớp 6A2 nhóm A bạn Nam cộng 1 điểm&quot;.
+              Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2 nhóm B trừ 2
+              điểm&quot;.
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -1426,8 +1426,8 @@ function ScoreboardPage({
               <span className="italic">&quot;{pendingTranscript}&quot;</span>
             </div>
             <p className="mt-1 text-[11px] text-gray-500">
-              Đây có đúng câu bạn muốn không? Nếu đúng, bấm &quot;Đúng, thực hiện&quot;
-              để cộng/trừ điểm.
+              Đây có đúng câu bạn muốn không? Nếu đúng, bấm &quot;Đúng, thực hiện&quot; để
+              cộng/trừ điểm.
             </p>
             <div className="mt-2 flex gap-2">
               <button
@@ -1728,7 +1728,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
-  // Lấy tên khối từ tên lớp, ví dụ "6A2" -> "Khối 6"
+  // Helper: lấy tên khối từ tên lớp, ví dụ "6A2" -> "Khối 6"
   const getGradeName = (className: string) => {
     const trimmed = className.trim();
     const m = trimmed.match(/^\d+/);
@@ -1739,9 +1739,11 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
   // Khởi tạo mặc định khi có dữ liệu
   useEffect(() => {
     if (!classes.length) return;
+
     if (!selectedClassId) {
       setSelectedClassId(classes[0].id);
     }
+
     if (!selectedGrade) {
       setSelectedGrade(getGradeName(classes[0].name));
     }
@@ -2000,8 +2002,8 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
 
       {!hasClasses ? (
         <p className="text-sm text-gray-500 mt-2">
-          Chưa có dữ liệu lớp/nhóm/học sinh để xếp hạng. Hãy vào tab &quot;Điểm
-          Số&quot; để tạo lớp, nhóm và thêm học sinh trước.
+          Chưa có dữ liệu lớp/nhóm/học sinh để xếp hạng. Hãy vào tab
+          &quot;Điểm Số&quot; để tạo lớp, nhóm và thêm học sinh trước.
         </p>
       ) : !hasPodium ? (
         <p className="text-sm text-gray-500 mt-2">
@@ -2114,6 +2116,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   return (
     <div className="mt-3">
       <div className="flex items-end justify-center gap-3 md:gap-6">
+        {/* Thứ tự hiển thị: Nhì - Nhất - Ba để giống bục đứng */}
         {renderSlot(2, second)}
         {renderSlot(1, first)}
         {renderSlot(3, third)}
