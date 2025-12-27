@@ -650,15 +650,10 @@ function ScoreboardPage({
 
     let text = normalize(raw);
 
-    let sign: 1 | -1 | null = null;
-    if (text.includes("tru")) sign = -1;
-    if (text.includes("cong") || text.includes("con ")) sign = 1;
-
-    if (sign === null) {
-      setVoiceError(
-        'Không nhận ra "cộng" hay "trừ". Hãy nói: "lớp 6A2 nhóm A cộng 5 điểm".',
-      );
-      return;
+    // MẶC ĐỊNH LÀ CỘNG, CHỈ TRỪ KHI THẤY "TRU"
+    let sign: 1 | -1 = 1;
+    if (text.includes("tru")) {
+      sign = -1;
     }
 
     // Lấy SỐ CUỐI CÙNG trong câu (tránh lấy số lớp 6A2)
@@ -1146,7 +1141,7 @@ function ScoreboardPage({
         </div>
       </div>
 
-      {/* Voice control card + xác nhận */}
+      {/* Voice control + xác nhận */}
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
@@ -1214,6 +1209,8 @@ function ScoreboardPage({
         )}
       </div>
 
+      {/* phần còn lại giống cũ: nhóm, học sinh, điểm... */}
+
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-gray-700">
           Lớp đang chọn:{" "}
@@ -1222,8 +1219,6 @@ function ScoreboardPage({
           </span>
         </h3>
       </div>
-
-      {/* phần còn lại của Scoreboard (nhóm, học sinh, điểm) giữ nguyên như trước */}
 
       <div className="grid md:grid-cols-2 gap-4">
         {activeClass.groups.map((group) => (
