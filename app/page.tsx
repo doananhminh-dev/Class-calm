@@ -122,7 +122,7 @@ export default function ClassifyPage() {
     if (now - lastVibrateRef.current < COOLDOWN_MS) return;
 
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-      navigator.vibrate(2000); // rung 2s
+      navigator.vibrate(2000);
       lastVibrateRef.current = now;
     }
   }, [isNoiseExceeded, noiseStarted]);
@@ -235,7 +235,7 @@ export default function ClassifyPage() {
                 <span className="text-white font-bold text-lg">C</span>
               </div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent tracking-wide">
-                ClassiFy
+                class-calm
               </h1>
             </div>
 
@@ -325,7 +325,6 @@ export default function ClassifyPage() {
         )}
       </main>
 
-      {/* Dev signature */}
       <div className="fixed bottom-2 right-4 text-[11px] text-gray-400 opacity-80 select-none">
         Dev: AnhMinh
       </div>
@@ -626,7 +625,6 @@ function ScoreboardPage({
   const activeClass =
     classes.find((c) => c.id === activeClassId) || classes[0] || null;
 
-  // ====== GIỌNG NÓI + AI GROQ ======
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
   const [pendingTranscript, setPendingTranscript] = useState("");
@@ -641,7 +639,6 @@ function ScoreboardPage({
       .replace(/\s+/g, " ")
       .trim();
 
-  // Fallback parser (dùng nếu AI lỗi)
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
       setVoiceError("Chưa có lớp nào để cộng điểm.");
@@ -651,18 +648,18 @@ function ScoreboardPage({
     const normText = normalize(raw);
     const normNoSpace = normText.replace(/\s+/g, "");
 
-    // MẶC ĐỊNH LÀ CỘNG, CHỈ TRỪ KHI CÓ "TRU"
+    // Mặc định CỘNG, chỉ TRỪ khi có "tru"
     let sign: 1 | -1 = normText.includes("tru") ? -1 : 1;
 
-    // Lấy SỐ CUỐI CÙNG trong câu (tránh lấy số lớp như 6 trong 6A2)
+    // Số CUỐI CÙNG trong câu
     const numMatches = normText.match(/\d+/g);
     let amount = 1;
     if (numMatches && numMatches.length > 0) {
-      amount = parseInt(numMatches[numMatches.length - 1], 10);
-      if (!Number.isFinite(amount) || amount <= 0) amount = 1;
+      const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
+      if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
     }
 
-    // Tìm lớp: khớp cả "6A2" lẫn "6 a 2"
+    // Tìm lớp: khớp cả "6a2" lẫn khi nói "6 a 2"
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
       const nc = normalize(c.name); // "6a2"
@@ -678,17 +675,12 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm nhóm: PHẢI match, nếu không thì báo lỗi
+    // Tìm nhóm: chỉ match "nhom a/b/c/d" đầy đủ
     let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
       const ng = normalize(g.name); // "nhom a"
-      const ngNoSpace = ng.replace(/\s+/g, "");
-      const short = ng.replace("nhom ", ""); // "a"
-      if (
-        normText.includes(ng) ||
-        (short && normText.includes(short)) ||
-        normNoSpace.includes(ngNoSpace)
-      ) {
+      const ngNoSpace = ng.replace(/\s+/g, ""); // "nhoma"
+      if (normText.includes(ng) || normNoSpace.includes(ngNoSpace)) {
         targetGroup = g;
         break;
       }
@@ -696,7 +688,7 @@ function ScoreboardPage({
 
     if (!targetGroup) {
       setVoiceError(
-        'Không xác định được nhóm. Hãy nói rõ: "nhóm A", "nhóm B", "nhóm C"…',
+        'Không xác định được nhóm. Hãy nói rõ: "nhóm A", "nhóm B", "nhóm C"...',
       );
       return;
     }
@@ -1146,7 +1138,7 @@ function ScoreboardPage({
           ))}
           <button
             onClick={handleAddClass}
-            className="px-3 py-1.5 rounded_full text-xs md:text-sm border border-dashed border-purple-300 text-purple-600 bg-purple-50/60 hover:bg-purple-100"
+            className="px-3 py-1.5 rounded-full text-xs md:text-sm border border-dashed border-purple-300 text-purple-600 bg-purple-50/60 hover:bg-purple-100"
           >
             + Thêm lớp
           </button>
@@ -1157,7 +1149,7 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Cộng/Trừ điểm nhóm bằng giọng nói (có AI Groq hỗ trợ phân tích).
+            Cộng/Trừ điểm nhóm bằng giọng nói (AI Groq phân tích).
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2
@@ -1401,7 +1393,7 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg_white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
             value={classFilter}
             onChange={(e) => setClassFilter(e.target.value)}
           >
@@ -1413,7 +1405,7 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
           </select>
 
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg_white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
             value={typeFilter}
             onChange={(e) =>
               setTypeFilter(e.target.value as "all" | "group" | "individual")
@@ -1548,7 +1540,7 @@ function AssistantChat() {
 
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col h-[70vh] bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60">
-      <div className="flex items-center justify_between mb-4">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg md:text-xl font-semibold text-purple-800">
             Trợ Lý AI
