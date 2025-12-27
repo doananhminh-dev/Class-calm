@@ -90,9 +90,9 @@ function normalizeText(s: string) {
 
 export default function ClassifyPage() {
   const [activeTab, setActiveTab] =
-    useState<
-      "sound" | "scoreboard" | "activity" | "leaderboard" | "ai"
-    >("sound");
+    useState<"sound" | "scoreboard" | "activity" | "leaderboard" | "ai">(
+      "sound",
+    );
 
   /* ====== ÂM THANH + RUNG ====== */
   const [dbLimit, setDbLimit] = useState(60);
@@ -749,6 +749,50 @@ function ScoreboardPage({
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
+  // Tìm học sinh từ câu lệnh thoại
+  const findMemberFromTranscript = (
+    raw: string,
+    cls: ClassRoom,
+    preferredGroup?: Group | null,
+  ): { member: Member; group: Group } | null => {
+    const text = normalizeText(raw);
+    const candidates: {
+      member: Member;
+      group: Group;
+      keyLen: number;
+    }[] = [];
+
+    const addCandidatesFromGroups = (groups: Group[]) => {
+      groups.forEach((g) => {
+        g.members.forEach((m) => {
+          const nm = normalizeText(m.name);
+          if (!nm) return;
+          if (text.includes(nm)) {
+            candidates.push({ member: m, group: g, keyLen: nm.length });
+          }
+        });
+      });
+    };
+
+    if (preferredGroup) {
+      addCandidatesFromGroups([preferredGroup]);
+      if (!candidates.length) {
+        addCandidatesFromGroups(
+          cls.groups.filter((g) => g.id !== preferredGroup.id),
+        );
+      }
+    } else {
+      addCandidatesFromGroups(cls.groups);
+    }
+
+    if (!candidates.length) return null;
+
+    // Ưu tiên tên dài hơn (ít trùng hơn)
+    candidates.sort((a, b) => b.keyLen - a.keyLen);
+    const best = candidates[0];
+    return { member: best.member, group: best.group };
+  };
+
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
       setVoiceError("Chưa có lớp nào để cộng điểm.");
@@ -785,24 +829,70 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm nhóm: PHẢI có "nhom a/b/c/d"
-    let targetGroup: Group | null = null;
+    // Thử bắt tên nhóm (nếu có)
+    let matchedGroup: Group | null = null;
     for (const g of targetClass.groups) {
       const ng = normalizeText(g.name); // "nhom a"
       const ngNoSpace = ng.replace(/\s+/g, "");
       if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
-        targetGroup = g;
+        matchedGroup = g;
         break;
       }
     }
-    if (!targetGroup) {
+
+    // Thử xem có tên học sinh nào không
+    const memberHit = findMemberFromTranscript(raw, targetClass, matchedGroup);
+    const delta = sign * amount;
+
+    if (memberHit) {
+      // Cộng / trừ ĐIỂM CÁ NHÂN
+      setClasses((prev) =>
+        prev.map((c) =>
+          c.id === targetClass!.id
+            ? {
+                ...c,
+                groups: c.groups.map((g) =>
+                  g.id === memberHit.group.id
+                    ? {
+                        ...g,
+                        members: g.members.map((m) =>
+                          m.id === memberHit.member.id
+                            ? { ...m, score: m.score + delta }
+                            : m,
+                        ),
+                      }
+                    : g,
+                ),
+              }
+            : c,
+        ),
+      );
+
+      if (targetClass.id !== activeClass?.id) {
+        setActiveClassId(targetClass.id);
+      }
+
+      onLog({
+        classId: targetClass.id,
+        groupId: memberHit.group.id,
+        memberId: memberHit.member.id,
+        change: delta,
+        reason: `Giọng nói (fallback cá nhân): "${raw}"`,
+        type: "individual",
+      });
+
+      setLastTranscript(raw);
+      setVoiceError("");
+      return;
+    }
+
+    // Không có tên học sinh → dùng ĐIỂM NHÓM như cũ
+    if (!matchedGroup) {
       setVoiceError(
         'Không xác định được nhóm. Hãy nói rõ: "nhóm A", "nhóm B", "nhóm C"...',
       );
       return;
     }
-
-    const delta = sign * amount;
 
     setClasses((prev) =>
       prev.map((c) =>
@@ -810,7 +900,7 @@ function ScoreboardPage({
           ? {
               ...c,
               groups: c.groups.map((g) =>
-                g.id === targetGroup!.id
+                g.id === matchedGroup!.id
                   ? { ...g, score: g.score + delta }
                   : g,
               ),
@@ -825,10 +915,10 @@ function ScoreboardPage({
 
     onLog({
       classId: targetClass.id,
-      groupId: targetGroup.id,
+      groupId: matchedGroup.id,
       memberId: null,
       change: delta,
-      reason: `Giọng nói (fallback): "${raw}"`,
+      reason: `Giọng nói (fallback nhóm): "${raw}"`,
       type: "group",
     });
 
@@ -903,6 +993,51 @@ function ScoreboardPage({
       const sign: 1 | -1 = action === "subtract" ? -1 : 1;
       const delta = sign * amount;
 
+      // Thử tìm xem có tên học sinh nào trong câu → ưu tiên CÁ NHÂN
+      const memberHit = findMemberFromTranscript(raw, targetClass, targetGroup);
+
+      if (memberHit) {
+        setClasses((prev) =>
+          prev.map((c) =>
+            c.id === targetClass.id
+              ? {
+                  ...c,
+                  groups: c.groups.map((g) =>
+                    g.id === memberHit.group.id
+                      ? {
+                          ...g,
+                          members: g.members.map((m) =>
+                            m.id === memberHit.member.id
+                              ? { ...m, score: m.score + delta }
+                              : m,
+                          ),
+                        }
+                      : g,
+                  ),
+                }
+              : c,
+          ),
+        );
+
+        if (targetClass.id !== activeClass?.id) {
+          setActiveClassId(targetClass.id);
+        }
+
+        onLog({
+          classId: targetClass.id,
+          groupId: memberHit.group.id,
+          memberId: memberHit.member.id,
+          change: delta,
+          reason: `Giọng nói (AI cá nhân): "${raw}"`,
+          type: "individual",
+        });
+
+        setLastTranscript(raw);
+        setVoiceError("");
+        return;
+      }
+
+      // Không có học sinh → CỘNG/TRỪ ĐIỂM NHÓM như trước
       setClasses((prev) =>
         prev.map((c) =>
           c.id === targetClass.id
@@ -927,7 +1062,7 @@ function ScoreboardPage({
         groupId: targetGroup.id,
         memberId: null,
         change: delta,
-        reason: `Giọng nói (AI): "${raw}"`,
+        reason: `Giọng nói (AI nhóm): "${raw}"`,
         type: "group",
       });
 
@@ -1258,11 +1393,13 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Cộng/Trừ điểm nhóm bằng giọng nói (AI Groq + parser dự phòng).
+            Cộng/Trừ điểm nhóm hoặc điểm cá nhân bằng giọng nói (AI Groq +
+            parser dự phòng).
             <br />
             <span className="text-[11px] text-gray-500">
-              Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2
-              nhóm B trừ 2 điểm&quot;.
+              Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot;, &quot;7A2 nhóm B
+              trừ 2 điểm&quot; hoặc &quot;lớp 6A2 nhóm A bạn Nam cộng 1
+              điểm&quot;.
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
