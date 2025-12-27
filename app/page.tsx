@@ -178,9 +178,10 @@ export default function ClassifyPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const savedClasses = localStorage.getItem("classify-classes-v2");
-    const savedHistory = localStorage.getItem("classify-history-v2");
-    const savedDbLimit = localStorage.getItem("classify-dbLimit");
+    // ĐỔI SANG v3 ĐỂ BỎ DỮ LIỆU CŨ (4 nhóm A, B, C, D)
+    const savedClasses = localStorage.getItem("classify-classes-v3");
+    const savedHistory = localStorage.getItem("classify-history-v3");
+    const savedDbLimit = localStorage.getItem("classify-dbLimit-v3");
 
     if (savedClasses) {
       try {
@@ -213,17 +214,17 @@ export default function ClassifyPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem("classify-classes-v2", JSON.stringify(classes));
+    localStorage.setItem("classify-classes-v3", JSON.stringify(classes));
   }, [classes]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem("classify-history-v2", JSON.stringify(history));
+    localStorage.setItem("classify-history-v3", JSON.stringify(history));
   }, [history]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem("classify-dbLimit", dbLimit.toString());
+    localStorage.setItem("classify-dbLimit-v3", dbLimit.toString());
   }, [dbLimit]);
 
   const handleLogPoints = (params: {
@@ -833,9 +834,9 @@ function ScoreboardPage({
   const recognitionStudentRef = useRef<any>(null);
 
   /* ====== HÀM CHUNG: LẤY DELTA TỪ SỐ CUỐI CÂU ======
-     - Sử dụng số cuối cùng trong câu (sau normalize)
+     - Dùng số cuối cùng trong câu (sau normalize)
      - Nếu số đó có dấu '-' / '+' -> theo dấu đó
-     - Nếu không có dấu mà trước đó gần số có chữ "tru"/"trừ" -> trừ
+     - Nếu không có dấu mà ngay trước số có chữ "tru"/"trừ" -> trừ
      - Nếu không thì coi là cộng
   */
 
@@ -857,7 +858,7 @@ function ScoreboardPage({
     let amount = 1;
 
     if (lastStr === null) {
-      // Không có số nào -> mặc định 1 điểm, dựa vào từ "trừ"/"tru" trong cả câu
+      // Không có số -> mặc định 1 điểm, dựa vào từ "trừ"/"tru" trong cả câu
       sign = norm.includes("tru") ? -1 : 1;
       amount = 1;
     } else {
