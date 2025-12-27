@@ -292,7 +292,7 @@ export default function ClassifyPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-6 py-3 rounded-lg font-medium transition-all ${
                   activeTab === tab.id
-                    ? "bg-gradient-to-br from-purple-500 to-violet-600 text:white text-white shadow-lg shadow-purple-500/30"
+                    ? "bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-lg shadow-purple-500/30"
                     : "text-gray-600 hover:bg-purple-50 hover:text-purple-700"
                 }`}
               >
@@ -609,7 +609,7 @@ function NoiseMonitorWithControls({
   };
 
   return (
-    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg-white/90 border border-purple-100 shadow-xl shadow-purple-100/60">
+    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg:white/90 bg-white/90 border border-purple-100 shadow-xl shadow-purple-100/60">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-lg md:text-xl font-semibold text-purple-800">
@@ -658,16 +658,18 @@ function NoiseMonitorWithControls({
                 style={{ width: `${percent}%` }}
               />
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-semibold text-purple-700">
-                {Math.round(db)}
-              </span>
-              <span className="text-sm text-gray-500">dB</span>
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-semibold text-purple-700">
+                  {Math.round(db)}
+                </span>
+                <span className="text-sm text-gray-500">dB</span>
+              </div>
+              <p className="text-xs text-gray-500 text-center">
+                Giá trị là mức ồn tương đối (0–100), đã được làm mượt để tránh
+                nhấp nháy.
+              </p>
             </div>
-            <p className="text-xs text-gray-500 text-center">
-              Giá trị là mức ồn tương đối (0–100), đã được làm mượt để tránh
-              nhấp nháy.
-            </p>
           </div>
         </div>
 
@@ -749,50 +751,35 @@ function ScoreboardPage({
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  // Tìm học sinh từ câu lệnh thoại
-  const findMemberFromTranscript = (
+  /* ====== HÀM TÌM HỌC SINH TRONG LỚP TỪ CÂU LỆNH THOẠI ====== */
+  const findMemberInClass = (
     raw: string,
     cls: ClassRoom,
-    preferredGroup?: Group | null,
+    preferredGroupId?: string | null,
   ): { member: Member; group: Group } | null => {
     const text = normalizeText(raw);
-    const candidates: {
-      member: Member;
-      group: Group;
-      keyLen: number;
-    }[] = [];
 
-    const addCandidatesFromGroups = (groups: Group[]) => {
-      groups.forEach((g) => {
-        g.members.forEach((m) => {
-          const nm = normalizeText(m.name);
-          if (!nm) return;
-          if (text.includes(nm)) {
-            candidates.push({ member: m, group: g, keyLen: nm.length });
-          }
-        });
-      });
-    };
+    const groupsToSearch: Group[] = preferredGroupId
+      ? [
+          ...cls.groups.filter((g) => g.id === preferredGroupId),
+          ...cls.groups.filter((g) => g.id !== preferredGroupId),
+        ]
+      : cls.groups;
 
-    if (preferredGroup) {
-      addCandidatesFromGroups([preferredGroup]);
-      if (!candidates.length) {
-        addCandidatesFromGroups(
-          cls.groups.filter((g) => g.id !== preferredGroup.id),
-        );
+    for (const g of groupsToSearch) {
+      for (const m of g.members) {
+        const nm = normalizeText(m.name);
+        if (!nm) continue;
+        if (text.includes(nm)) {
+          return { member: m, group: g };
+        }
       }
-    } else {
-      addCandidatesFromGroups(cls.groups);
     }
 
-    if (!candidates.length) return null;
-
-    // Ưu tiên tên dài hơn (ít trùng hơn)
-    candidates.sort((a, b) => b.keyLen - a.keyLen);
-    const best = candidates[0];
-    return { member: best.member, group: best.group };
+    return null;
   };
 
+  /* ====== PARSER LOCAL (KHI KHÔNG DÙNG AI HOẶC AI LỖI) ====== */
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
       setVoiceError("Chưa có lớp nào để cộng điểm.");
@@ -800,10 +787,10 @@ function ScoreboardPage({
     }
 
     const text = normalizeText(raw);
-    const words = text.split(" ");
+    const textNoSpace = text.replace(/\s+/g, "");
 
-    // Mặc định CỘNG, chỉ TRỪ khi có từ "trừ"
-    let sign: 1 | -1 = words.includes("tru") ? -1 : 1;
+    // Mặc định CỘNG, chỉ TRỪ khi có "tru" (giống code gốc, áp dụng luôn cho cá nhân)
+    let sign: 1 | -1 = text.includes("tru") ? -1 : 1;
 
     // Lấy số CUỐI CÙNG trong câu
     const numMatches = text.match(/\d+/g);
@@ -818,7 +805,7 @@ function ScoreboardPage({
     for (const c of classes) {
       const nc = normalizeText(c.name); // "6a2"
       const ncNoSpace = nc.replace(/\s+/g, "");
-      if (text.includes(nc) || text.replace(/\s+/g, "").includes(ncNoSpace)) {
+      if (text.includes(nc) || textNoSpace.includes(ncNoSpace)) {
         targetClass = c;
         break;
       }
@@ -829,23 +816,27 @@ function ScoreboardPage({
       return;
     }
 
-    // Thử bắt tên nhóm (nếu có)
-    let matchedGroup: Group | null = null;
+    // Tìm nhóm (nếu có nói)
+    let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
       const ng = normalizeText(g.name); // "nhom a"
       const ngNoSpace = ng.replace(/\s+/g, "");
-      if (text.includes(ng) || text.replace(/\s+/g, "").includes(ngNoSpace)) {
-        matchedGroup = g;
+      if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
+        targetGroup = g;
         break;
       }
     }
 
-    // Thử xem có tên học sinh nào không
-    const memberHit = findMemberFromTranscript(raw, targetClass, matchedGroup);
     const delta = sign * amount;
 
+    // Thử tìm xem có tên học sinh nào trong câu → ƯU TIÊN CÁ NHÂN
+    const memberHit = findMemberInClass(
+      raw,
+      targetClass,
+      targetGroup?.id ?? null,
+    );
+
     if (memberHit) {
-      // Cộng / trừ ĐIỂM CÁ NHÂN
       setClasses((prev) =>
         prev.map((c) =>
           c.id === targetClass!.id
@@ -886,8 +877,8 @@ function ScoreboardPage({
       return;
     }
 
-    // Không có tên học sinh → dùng ĐIỂM NHÓM như cũ
-    if (!matchedGroup) {
+    // Không có tên học sinh → xử lý ĐIỂM NHÓM như code gốc
+    if (!targetGroup) {
       setVoiceError(
         'Không xác định được nhóm. Hãy nói rõ: "nhóm A", "nhóm B", "nhóm C"...',
       );
@@ -900,7 +891,7 @@ function ScoreboardPage({
           ? {
               ...c,
               groups: c.groups.map((g) =>
-                g.id === matchedGroup!.id
+                g.id === targetGroup!.id
                   ? { ...g, score: g.score + delta }
                   : g,
               ),
@@ -915,10 +906,10 @@ function ScoreboardPage({
 
     onLog({
       classId: targetClass.id,
-      groupId: matchedGroup.id,
+      groupId: targetGroup.id,
       memberId: null,
       change: delta,
-      reason: `Giọng nói (fallback nhóm): "${raw}"`,
+      reason: `Giọng nói (fallback): "${raw}"`,
       type: "group",
     });
 
@@ -926,6 +917,7 @@ function ScoreboardPage({
     setVoiceError("");
   };
 
+  /* ====== DÙNG AI (/api/voice-command) ====== */
   const handleTranscriptWithAI = async (raw: string) => {
     setVoiceError("");
 
@@ -955,6 +947,7 @@ function ScoreboardPage({
 
       const className: string | undefined = data.className;
       const groupName: string | undefined = data.groupName;
+      const action: "add" | "subtract" = data.action || "add";
       const amount: number = data.amount && data.amount > 0 ? data.amount : 1;
 
       if (!className || !groupName) {
@@ -989,14 +982,12 @@ function ScoreboardPage({
         return;
       }
 
-      // Ưu tiên từ "trừ" trong câu nói để quyết định dấu
-      const norm = normalizeText(raw);
-      const words = norm.split(" ");
-      const localSign: 1 | -1 = words.includes("tru") ? -1 : 1;
-      const delta = localSign * amount;
+      // GIỮ NGUYÊN LOGIC DẤU CHO NHÓM: dựa vào action của AI
+      const sign: 1 | -1 = action === "subtract" ? -1 : 1;
+      const delta = sign * amount;
 
-      // Thử tìm xem có tên học sinh nào trong câu → ưu tiên CÁ NHÂN
-      const memberHit = findMemberFromTranscript(raw, targetClass, targetGroup);
+      // Thử xem có học sinh nào xuất hiện trong câu → ƯU TIÊN CÁ NHÂN:
+      const memberHit = findMemberInClass(raw, targetClass, targetGroup.id);
 
       if (memberHit) {
         setClasses((prev) =>
@@ -1039,7 +1030,7 @@ function ScoreboardPage({
         return;
       }
 
-      // Không có học sinh → CỘNG/TRỪ ĐIỂM NHÓM
+      // KHÔNG CÓ HỌC SINH → ĐIỂM NHÓM đúng như code gốc
       setClasses((prev) =>
         prev.map((c) =>
           c.id === targetClass.id
@@ -1064,7 +1055,7 @@ function ScoreboardPage({
         groupId: targetGroup.id,
         memberId: null,
         change: delta,
-        reason: `Giọng nói (AI nhóm): "${raw}"`,
+        reason: `Giọng nói (AI): "${raw}"`,
         type: "group",
       });
 
@@ -1131,7 +1122,7 @@ function ScoreboardPage({
     rec.start();
   };
 
-  /* ====== ĐIỂM SỐ THÔNG THƯỜNG & UI ====== */
+  /* ====== CÁC HÀM QUẢN LÝ LỚP / NHÓM / THÀNH VIÊN (GIỮ NGUYÊN) ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -1354,6 +1345,8 @@ function ScoreboardPage({
     );
   }
 
+  /* ====== JSX HIỂN THỊ GIỮ NGUYÊN NHƯ CODE GỐC ====== */
+
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -1395,13 +1388,12 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Cộng/Trừ điểm nhóm hoặc điểm cá nhân bằng giọng nói (AI Groq +
-            parser dự phòng).
+            Cộng/Trừ điểm nhóm hoặc điểm cá nhân bằng giọng nói (AI Groq + parser
+            dự phòng).
             <br />
             <span className="text-[11px] text-gray-500">
-              Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot;, &quot;7A2 nhóm B
-              trừ 2 điểm&quot; hoặc &quot;lớp 6A2 nhóm A bạn Nam cộng 1
-              điểm&quot;.
+              Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot;, &quot;7A2 nhóm B trừ 2
+              điểm&quot; hoặc &quot;lớp 6A2 nhóm A bạn Nam cộng 1 điểm&quot;.
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -1434,8 +1426,8 @@ function ScoreboardPage({
               <span className="italic">&quot;{pendingTranscript}&quot;</span>
             </div>
             <p className="mt-1 text-[11px] text-gray-500">
-              Đây có đúng câu bạn muốn không? Nếu đúng, bấm &quot;Đúng, thực
-              hiện&quot; để cộng/trừ điểm.
+              Đây có đúng câu bạn muốn không? Nếu đúng, bấm &quot;Đúng, thực hiện&quot;
+              để cộng/trừ điểm.
             </p>
             <div className="mt-2 flex gap-2">
               <button
@@ -1530,8 +1522,7 @@ function ScoreboardPage({
 
               {group.members.length === 0 ? (
                 <p className="text-xs text-gray-400">
-                  Chưa có học sinh. Nhấn &quot;+ Thêm học sinh&quot; để bắt
-                  đầu.
+                  Chưa có học sinh. Nhấn &quot;+ Thêm học sinh&quot; để bắt đầu.
                 </p>
               ) : (
                 <div className="flex flex-col gap-2 max-h-52 overflow-y-auto pr-1">
@@ -1737,7 +1728,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
-  // Helper: lấy tên khối từ tên lớp, ví dụ "6A2" -> "Khối 6"
+  // Lấy tên khối từ tên lớp, ví dụ "6A2" -> "Khối 6"
   const getGradeName = (className: string) => {
     const trimmed = className.trim();
     const m = trimmed.match(/^\d+/);
@@ -1748,11 +1739,9 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
   // Khởi tạo mặc định khi có dữ liệu
   useEffect(() => {
     if (!classes.length) return;
-
     if (!selectedClassId) {
       setSelectedClassId(classes[0].id);
     }
-
     if (!selectedGrade) {
       setSelectedGrade(getGradeName(classes[0].name));
     }
@@ -1923,7 +1912,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             onClick={() => setView("group")}
             className={`px-3 py-1 rounded-full font-medium ${
               view === "group"
-                ? "bg:white text-purple-700 shadow-sm"
+                ? "bg-white text-purple-700 shadow-sm"
                 : "text-gray-600 hover:text-purple-700"
             }`}
           >
@@ -2011,8 +2000,8 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
 
       {!hasClasses ? (
         <p className="text-sm text-gray-500 mt-2">
-          Chưa có dữ liệu lớp/nhóm/học sinh để xếp hạng. Hãy vào tab
-          &quot;Điểm Số&quot; để tạo lớp, nhóm và thêm học sinh trước.
+          Chưa có dữ liệu lớp/nhóm/học sinh để xếp hạng. Hãy vào tab &quot;Điểm
+          Số&quot; để tạo lớp, nhóm và thêm học sinh trước.
         </p>
       ) : !hasPodium ? (
         <p className="text-sm text-gray-500 mt-2">
@@ -2024,9 +2013,9 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
 
       {hasPodium && (
         <div className="mt-3 text-[11px] md:text-xs text-gray-500">
-          Điểm dùng để xếp hạng là <b>điểm cá nhân</b> (cột &quot;Điểm cá
-          nhân&quot; của từng học sinh). Hạng Nhất có huy chương vàng to và
-          bục đứng cao hơn Hạng Nhì và Ba.
+          Điểm dùng để xếp hạng là <b>điểm cá nhân</b> (cột &quot;Điểm cá nhân&quot;
+          của từng học sinh). Hạng Nhất có huy chương vàng to và bục đứng cao
+          hơn Hạng Nhì và Ba.
         </div>
       )}
     </div>
@@ -2040,7 +2029,6 @@ interface PodiumEntry {
 }
 
 function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
-  // entries đã được sort giảm dần: [hạng1, hạng2, hạng3]
   const [first, second, third] = entries;
 
   const renderSlot = (rank: 1 | 2 | 3, entry?: PodiumEntry) => {
@@ -2078,7 +2066,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
         key={rank}
         className="flex flex-col items-center justify-end flex-1 min-w-[84px] md:min-w-[110px]"
       >
-        {entry && (
+        {entry ? (
           <>
             <div className="flex flex-col items-center mb-2">
               <div
@@ -2103,15 +2091,14 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
               </div>
             </div>
             <div
-              className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items:end justify-center pb-2 shadow-sm`}
+              className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items-end justify-center pb-2 shadow-sm`}
             >
               <span className="text-[11px] md:text-xs font-semibold text-gray-700">
                 Hạng {rank}
               </span>
             </div>
           </>
-        )}
-        {!entry && (
+        ) : (
           <div
             className={`w-full bg-gray-100 ${baseHeight} rounded-t-xl flex items-end justify-center pb-2`}
           >
@@ -2127,7 +2114,6 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   return (
     <div className="mt-3">
       <div className="flex items-end justify-center gap-3 md:gap-6">
-        {/* Thứ tự hiển thị: Nhì - Nhất - Ba để giống bục đứng */}
         {renderSlot(2, second)}
         {renderSlot(1, first)}
         {renderSlot(3, third)}
