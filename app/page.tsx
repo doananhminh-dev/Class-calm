@@ -111,7 +111,6 @@ export default function ClassifyPage() {
     setIsMicActive(noiseStarted);
   }, [noiseStarted]);
 
-  // Hysteresis tránh nhấp nháy
   useEffect(() => {
     const MARGIN = 2;
     setIsNoiseExceeded((prev) => {
@@ -122,14 +121,11 @@ export default function ClassifyPage() {
     });
   }, [currentDb, dbLimit, noiseStarted]);
 
-  // RUNG 2s KHI VỪA VƯỢT NGƯỠNG, COOLDOWN 3s
   useEffect(() => {
-    if (!noiseStarted) return;
-    if (!isNoiseExceeded) return;
+    if (!noiseStarted || !isNoiseExceeded) return;
 
     const now = Date.now();
     const COOLDOWN_MS = 3000;
-
     if (now - lastVibrateRef.current < COOLDOWN_MS) return;
 
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
@@ -744,14 +740,14 @@ function ScoreboardPage({
   const activeClass =
     classes.find((c) => c.id === activeClassId) || classes[0] || null;
 
-  // Giọng nói NHÓM (giữ nguyên như code gốc)
+  // Voice NHÓM (giữ logic cũ)
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
   const [pendingTranscript, setPendingTranscript] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  // Giọng nói HỌC SINH (nút riêng)
+  // Voice HỌC SINH (nút riêng)
   const [listeningStudent, setListeningStudent] = useState(false);
   const [lastTranscriptStudent, setLastTranscriptStudent] = useState("");
   const [pendingTranscriptStudent, setPendingTranscriptStudent] =
@@ -1042,11 +1038,14 @@ function ScoreboardPage({
       return;
     }
 
-    const text = normalizeText(raw);
+    // Chuẩn hoá các loại dấu trừ unicode (−, –, —) thành '-'
+    const rawNormSign = raw.replace(/[−–—]/g, "-");
+
+    const text = normalizeText(rawNormSign);
     const textNoSpace = text.replace(/\s+/g, "");
 
     // Ưu tiên số có dấu âm, ví dụ "-2"
-    const signedMatches = raw.match(/-?\d+/g);
+    const signedMatches = rawNormSign.match(/-?\d+/g);
     let amount = 1;
     let sign: 1 | -1 = 1;
 
@@ -1082,8 +1081,8 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm học sinh
-    const hit = findMemberInClass(raw, targetClass);
+    // Tìm học sinh theo tên
+    const hit = findMemberInClass(rawNormSign, targetClass);
     if (!hit) {
       setVoiceErrorStudent(
         "Không tìm được học sinh trong lớp. Hãy đọc đúng tên giống trong danh sách.",
@@ -1091,6 +1090,7 @@ function ScoreboardPage({
       return;
     }
 
+    // Áp dụng delta cho điểm cá nhân
     setClasses((prev) =>
       prev.map((c) =>
         c.id === targetClass!.id
@@ -1122,11 +1122,11 @@ function ScoreboardPage({
       groupId: hit.group.id,
       memberId: hit.member.id,
       change: delta,
-      reason: `Giọng nói HS: "${raw}"`,
+      reason: `Giọng nói HS: "${rawNormSign}"`,
       type: "individual",
     });
 
-    setLastTranscriptStudent(raw);
+    setLastTranscriptStudent(rawNormSign);
     setVoiceErrorStudent("");
   };
 
@@ -1181,7 +1181,7 @@ function ScoreboardPage({
     rec.start();
   };
 
-  /* ====== QUẢN LÝ LỚP / NHÓM / HỌC SINH (như cũ) ====== */
+  /* ====== CRUD LỚP / NHÓM / HỌC SINH (như cũ) ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -1517,7 +1517,7 @@ function ScoreboardPage({
             Cộng/Trừ điểm cá nhân bằng giọng nói.
             <br />
             <span className="text-[11px] text-gray-500">
-              Ví dụ: &quot;lớp 6A2 nhóm A bạn Nam cộng 1 điểm&quot; hoặc &quot;6A2 bạn Lan
+              Ví dụ: &quot;lớp 6A2 nhóm A bạn Nam cộng 1 điểm&quot;, hoặc &quot;6A2 bạn An
               -2 điểm&quot;.
             </span>
           </div>
@@ -2008,7 +2008,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
           </p>
         </div>
 
-        <div className="inline-flex rounded-full bg-purple-50 p-1 text-xs md:text-sm border border-purple-100">
+      <div className="inline-flex rounded-full bg-purple-50 p-1 text-xs md:text-sm border border-purple-100">
           <button
             type="button"
             onClick={() => setView("grade")}
