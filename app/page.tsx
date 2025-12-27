@@ -745,12 +745,12 @@ function ScoreboardPage({
   const activeClass =
     classes.find((c) => c.id === activeClassId) || classes[0] || null;
 
-  // Giọng nói NHÓM (y như code gốc)
-  const [listeningGroup, setListeningGroup] = useState(false);
-  const [lastTranscriptGroup, setLastTranscriptGroup] = useState("");
-  const [pendingTranscriptGroup, setPendingTranscriptGroup] = useState("");
-  const [voiceErrorGroup, setVoiceErrorGroup] = useState("");
-  const recognitionGroupRef = useRef<any>(null);
+  // Giọng nói NHÓM (nguyên code cũ)
+  const [listening, setListening] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState("");
+  const [pendingTranscript, setPendingTranscript] = useState("");
+  const [voiceError, setVoiceError] = useState("");
+  const recognitionRef = useRef<any>(null);
 
   // Giọng nói HỌC SINH (nút riêng)
   const [listeningStudent, setListeningStudent] = useState(false);
@@ -760,11 +760,11 @@ function ScoreboardPage({
   const [voiceErrorStudent, setVoiceErrorStudent] = useState("");
   const recognitionStudentRef = useRef<any>(null);
 
-  /* ====== GIỌNG NÓI NHÓM – LOGIC Y NHƯ CODE GỐC ====== */
+  /* ====== PARSER NHÓM (GIỮ NGUYÊN CODE CŨ) ====== */
 
-  const fallbackLocalParseGroup = (raw: string) => {
+  const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
-      setVoiceErrorGroup("Chưa có lớp nào để cộng điểm.");
+      setVoiceError("Chưa có lớp nào để cộng điểm.");
       return;
     }
 
@@ -794,7 +794,7 @@ function ScoreboardPage({
     }
     if (!targetClass) targetClass = activeClass || classes[0] || null;
     if (!targetClass) {
-      setVoiceErrorGroup("Không xác định được lớp, hãy chọn lớp ở trên.");
+      setVoiceError("Không xác định được lớp, hãy chọn lớp ở trên.");
       return;
     }
 
@@ -809,7 +809,7 @@ function ScoreboardPage({
       }
     }
     if (!targetGroup) {
-      setVoiceErrorGroup(
+      setVoiceError(
         'Không xác định được nhóm. Hãy nói rõ: "nhóm A", "nhóm B", "nhóm C"...',
       );
       return;
@@ -845,12 +845,12 @@ function ScoreboardPage({
       type: "group",
     });
 
-    setLastTranscriptGroup(raw);
-    setVoiceErrorGroup("");
+    setLastTranscript(raw);
+    setVoiceError("");
   };
 
-  const handleTranscriptWithAIGroup = async (raw: string) => {
-    setVoiceErrorGroup("");
+  const handleTranscriptWithAI = async (raw: string) => {
+    setVoiceError("");
 
     const classesForAi = classes.map((c) => ({
       name: c.name,
@@ -868,11 +868,11 @@ function ScoreboardPage({
 
       if (!res.ok || data.error || data.ok === false) {
         console.warn("AI voice-command error:", data.error);
-        setVoiceErrorGroup(
+        setVoiceError(
           data.error ||
             "AI không hiểu lệnh giọng nói, đang dùng cách phân tích dự phòng.",
         );
-        fallbackLocalParseGroup(raw);
+        fallbackLocalParse(raw);
         return;
       }
 
@@ -882,10 +882,10 @@ function ScoreboardPage({
       const amount: number = data.amount && data.amount > 0 ? data.amount : 1;
 
       if (!className || !groupName) {
-        setVoiceErrorGroup(
+        setVoiceError(
           "AI không tìm được lớp/nhóm phù hợp, đang dùng cách phân tích dự phòng.",
         );
-        fallbackLocalParseGroup(raw);
+        fallbackLocalParse(raw);
         return;
       }
 
@@ -894,10 +894,10 @@ function ScoreboardPage({
           (c) => normalizeText(c.name) === normalizeText(className as string),
         ) || activeClass;
       if (!targetClass) {
-        setVoiceErrorGroup(
+        setVoiceError(
           "AI không khớp được tên lớp với dữ liệu, đang dùng cách phân tích dự phòng.",
         );
-        fallbackLocalParseGroup(raw);
+        fallbackLocalParse(raw);
         return;
       }
 
@@ -907,7 +907,7 @@ function ScoreboardPage({
         ) || null;
 
       if (!targetGroup) {
-        setVoiceErrorGroup(
+        setVoiceError(
           'AI không khớp được tên nhóm. Hãy nói rõ "Nhóm A/B/C/D".',
         );
         return;
@@ -944,40 +944,40 @@ function ScoreboardPage({
         type: "group",
       });
 
-      setLastTranscriptGroup(raw);
-      setVoiceErrorGroup("");
+      setLastTranscript(raw);
+      setVoiceError("");
     } catch (err) {
       console.error("Lỗi gọi /api/voice-command:", err);
-      setVoiceErrorGroup(
+      setVoiceError(
         "Không kết nối được AI, đang dùng cách phân tích dự phòng.",
       );
-      fallbackLocalParseGroup(raw);
+      fallbackLocalParse(raw);
     }
   };
 
-  const handleVoiceToggleGroup = () => {
+  const handleVoiceToggle = () => {
     if (typeof window === "undefined") return;
 
     const w = window as any;
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SR) {
-      setVoiceErrorGroup(
+      setVoiceError(
         "Trình duyệt không hỗ trợ nhận diện giọng nói (nên dùng Chrome hoặc Edge).",
       );
       return;
     }
 
-    if (listeningGroup) {
-      recognitionGroupRef.current?.stop?.();
-      recognitionGroupRef.current = null;
-      setListeningGroup(false);
+    if (listening) {
+      recognitionRef.current?.stop?.();
+      recognitionRef.current = null;
+      setListening(false);
       return;
     }
 
-    setVoiceErrorGroup("");
-    setPendingTranscriptGroup("");
+    setVoiceError("");
+    setPendingTranscript("");
     const rec = new SR();
-    recognitionGroupRef.current = rec;
+    recognitionRef.current = rec;
     rec.lang = "vi-VN";
     rec.continuous = false;
     rec.interimResults = false;
@@ -986,28 +986,62 @@ function ScoreboardPage({
     rec.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript as string;
       const clean = transcript.trim();
-      setPendingTranscriptGroup(clean);
-      setListeningGroup(false);
-      recognitionGroupRef.current = null;
+      setPendingTranscript(clean);
+      setListening(false);
+      recognitionRef.current = null;
     };
 
     rec.onerror = (event: any) => {
       console.error("Voice error", event);
-      setVoiceErrorGroup("Không nhận diện được, hãy thử lại và nói rõ ràng.");
-      setListeningGroup(false);
-      recognitionGroupRef.current = null;
+      setVoiceError("Không nhận diện được, hãy thử lại và nói rõ ràng.");
+      setListening(false);
+      recognitionRef.current = null;
     };
 
     rec.onend = () => {
-      setListeningGroup(false);
-      recognitionGroupRef.current = null;
+      setListening(false);
+      recognitionRef.current = null;
     };
 
-    setListeningGroup(true);
+    setListening(true);
     rec.start();
   };
 
-  /* ====== GIỌNG NÓI HỌC SINH – NÚT RIÊNG, LOCAL PARSE ====== */
+  /* ====== HỖ TRỢ TÌM HỌC SINH ====== */
+
+  const findMemberInClass = (raw: string, cls: ClassRoom) => {
+    const text = normalizeText(raw);
+    // Ưu tiên nhóm đã được nhắc trong câu
+    const textNoSpace = text.replace(/\s+/g, "");
+
+    const preferredGroupIds = new Set<string>();
+    for (const g of cls.groups) {
+      const ng = normalizeText(g.name);
+      const ngNoSpace = ng.replace(/\s+/g, "");
+      if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
+        preferredGroupIds.add(g.id);
+      }
+    }
+
+    const orderedGroups = [
+      ...cls.groups.filter((g) => preferredGroupIds.has(g.id)),
+      ...cls.groups.filter((g) => !preferredGroupIds.has(g.id)),
+    ];
+
+    for (const g of orderedGroups) {
+      for (const m of g.members) {
+        const nm = normalizeText(m.name);
+        if (!nm) continue;
+        if (text.includes(nm)) {
+          return { member: m, group: g };
+        }
+      }
+    }
+
+    return null;
+  };
+
+  /* ====== GIỌNG NÓI HỌC SINH (NÚT RIÊNG, LOCAL PARSE) ====== */
 
   const applyStudentVoiceCommand = (raw: string) => {
     if (!classes.length) {
@@ -1018,19 +1052,18 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // DẤU y như nhóm: mặc định cộng, chỉ trừ khi có "tru"
+    // Dấu y hệt nhóm: mặc định cộng, có "tru" thì trừ
     const sign: 1 | -1 = text.includes("tru") ? -1 : 1;
 
-    // Lấy số CUỐI
     const numMatches = text.match(/\d+/g);
     let amount = 1;
-    if (numMatches && numMatches.length > 0) {
+    if (numMatches && numMatches.length) {
       const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
       if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
     }
     const delta = sign * amount;
 
-    // Tìm lớp
+    // Tìm lớp (giống nhóm)
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
       const nc = normalizeText(c.name);
@@ -1046,20 +1079,9 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm nhóm (nếu có nói) để ưu tiên tìm HS trong nhóm đó
-    let preferredGroupId: string | null = null;
-    for (const g of targetClass.groups) {
-      const ng = normalizeText(g.name);
-      const ngNoSpace = ng.replace(/\s+/g, "");
-      if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
-        preferredGroupId = g.id;
-        break;
-      }
-    }
-
-    // Tìm học sinh theo tên
-    const memberHit = findMemberInClass(raw, targetClass, preferredGroupId);
-    if (!memberHit) {
+    // Tìm học sinh
+    const hit = findMemberInClass(raw, targetClass);
+    if (!hit) {
       setVoiceErrorStudent(
         "Không tìm được học sinh trong lớp. Hãy đọc đúng tên giống trong danh sách.",
       );
@@ -1072,11 +1094,11 @@ function ScoreboardPage({
           ? {
               ...c,
               groups: c.groups.map((g) =>
-                g.id === memberHit.group.id
+                g.id === hit.group.id
                   ? {
                       ...g,
                       members: g.members.map((m) =>
-                        m.id === memberHit.member.id
+                        m.id === hit.member.id
                           ? { ...m, score: m.score + delta }
                           : m,
                       ),
@@ -1094,8 +1116,8 @@ function ScoreboardPage({
 
     onLog({
       classId: targetClass.id,
-      groupId: memberHit.group.id,
-      memberId: memberHit.member.id,
+      groupId: hit.group.id,
+      memberId: hit.member.id,
       change: delta,
       reason: `Giọng nói HS: "${raw}"`,
       type: "individual",
@@ -1157,7 +1179,7 @@ function ScoreboardPage({
     rec.start();
   };
 
-  /* ====== QUẢN LÝ LỚP / NHÓM / THÀNH VIÊN (GIỐNG CODE GỐC) ====== */
+  /* ====== QUẢN LÝ LỚP / NHÓM / THÀNH VIÊN (NHƯ CŨ) ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -1419,12 +1441,11 @@ function ScoreboardPage({
         </div>
       </div>
 
-      {/* Voice control cho NHÓM + HS */}
-      <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-3">
-        {/* NHÓM */}
+      {/* Voice NHÓM (giữ y code cũ) */}
+      <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Giọng nói NHÓM (giữ nguyên như cũ):
+            Cộng/Trừ điểm nhóm bằng giọng nói.
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2 nhóm B trừ 2
@@ -1434,42 +1455,40 @@ function ScoreboardPage({
           <div className="flex flex-col items-end gap-1">
             <button
               type="button"
-              onClick={handleVoiceToggleGroup}
+              onClick={handleVoiceToggle}
               className={`px-3 py-1.5 rounded-full text-xs md:text-sm font-medium border ${
-                listeningGroup
+                listening
                   ? "bg-red-50 border-red-200 text-red-700"
                   : "bg-purple-600 border-purple-600 text-white"
               }`}
             >
-              {listeningGroup ? "Tắt nghe nhóm" : "Nhấn để nói (NHÓM)"}
+              {listening ? "Tắt nghe nhóm" : "Nhấn để nói (NHÓM)"}
             </button>
-            {lastTranscriptGroup && (
+            {lastTranscript && (
               <span className="text-[11px] text-gray-500">
-                Nhóm - câu gần nhất: &quot;{lastTranscriptGroup}&quot;
+                Nhóm - câu gần nhất: &quot;{lastTranscript}&quot;
               </span>
             )}
-            {voiceErrorGroup && (
-              <span className="text-[11px] text-red-500">
-                {voiceErrorGroup}
-              </span>
+            {voiceError && (
+              <span className="text-[11px] text-red-500">{voiceError}</span>
             )}
           </div>
         </div>
 
-        {pendingTranscriptGroup && (
-          <div className="rounded-xl bg-white/95 border border-purple-100 px-3 py-2 text-xs text-gray-700">
+        {pendingTranscript && (
+          <div className="mt-2 rounded-xl bg-white/95 border border-purple-100 px-3 py-2 text-xs text-gray-700">
             <div>
               <span className="font-medium">Nhóm - hệ thống nghe được:</span>{" "}
-              <span className="italic">&quot;{pendingTranscriptGroup}&quot;</span>
+              <span className="italic">&quot;{pendingTranscript}&quot;</span>
             </div>
             <p className="mt-1 text-[11px] text-gray-500">
-              Nếu đúng, bấm &quot;Đúng, thực hiện&quot; để cộng/trừ điểm NHÓM.
+              Nếu đúng, bấm &quot;Đúng, thực hiện&quot; để cộng/trừ điểm nhóm.
             </p>
             <div className="mt-2 flex gap-2">
               <button
                 onClick={() => {
-                  handleTranscriptWithAIGroup(pendingTranscriptGroup);
-                  setPendingTranscriptGroup("");
+                  handleTranscriptWithAI(pendingTranscript);
+                  setPendingTranscript("");
                 }}
                 className="px-3 py-1 rounded-full bg-purple-600 text-white text-xs font-medium hover:bg-purple-700"
               >
@@ -1477,8 +1496,8 @@ function ScoreboardPage({
               </button>
               <button
                 onClick={() => {
-                  setPendingTranscriptGroup("");
-                  setVoiceErrorGroup("");
+                  setPendingTranscript("");
+                  setVoiceError("");
                 }}
                 className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs border border-gray-300 hover:bg-gray-200"
               >
@@ -1487,13 +1506,13 @@ function ScoreboardPage({
             </div>
           </div>
         )}
+      </div>
 
-        <hr className="border-purple-100" />
-
-        {/* HỌC SINH */}
+      {/* Voice HỌC SINH (nút riêng) */}
+      <div className="rounded-2xl bg-indigo-50/70 border border-indigo-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Giọng nói HỌC SINH (nút riêng):
+            Cộng/Trừ điểm cá nhân bằng giọng nói.
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;lớp 6A2 nhóm A bạn Nam cộng 1 điểm&quot; hoặc &quot;6A2 bạn Lan
@@ -1526,13 +1545,13 @@ function ScoreboardPage({
         </div>
 
         {pendingTranscriptStudent && (
-          <div className="rounded-xl bg-white/95 border border-purple-100 px-3 py-2 text-xs text-gray-700">
+          <div className="mt-2 rounded-xl bg-white/95 border border-indigo-100 px-3 py-2 text-xs text-gray-700">
             <div>
               <span className="font-medium">HS - hệ thống nghe được:</span>{" "}
               <span className="italic">&quot;{pendingTranscriptStudent}&quot;</span>
             </div>
             <p className="mt-1 text-[11px] text-gray-500">
-              Nếu đúng, bấm &quot;Đúng, thực hiện&quot; để cộng/trừ điểm CÁ NHÂN.
+              Nếu đúng, bấm &quot;Đúng, thực hiện&quot; để cộng/trừ điểm cá nhân.
             </p>
             <div className="mt-2 flex gap-2">
               <button
@@ -2221,6 +2240,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   return (
     <div className="mt-3">
       <div className="flex items-end justify-center gap-3 md:gap-6">
+        {/* Thứ tự hiển thị: Nhì - Nhất - Ba để giống bục đứng */}
         {renderSlot(2, second)}
         {renderSlot(1, first)}
         {renderSlot(3, third)}
