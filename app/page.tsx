@@ -504,7 +504,6 @@ function useNoiseMeter() {
       smoothDbRef.current = 0;
     }
 
-    // Mic nhạy hơn (giảm noise gate, tăng hệ số & step)
     const SMOOTHING = 0.25;
     const NOISE_GATE = 1;
     const MAX_STEP = 5;
@@ -525,7 +524,7 @@ function useNoiseMeter() {
 
       const rms = Math.sqrt(sum / arr.length);
 
-      let rawDb = rms * 170; // nhạy hơn
+      let rawDb = rms * 170;
       if (!isFinite(rawDb) || isNaN(rawDb)) rawDb = 0;
       rawDb = Math.min(100, Math.max(0, rawDb));
 
@@ -745,7 +744,7 @@ function ScoreboardPage({
   const activeClass =
     classes.find((c) => c.id === activeClassId) || classes[0] || null;
 
-  // Giọng nói NHÓM (nguyên code cũ)
+  // Giọng nói NHÓM (giữ nguyên như code gốc)
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
   const [pendingTranscript, setPendingTranscript] = useState("");
@@ -760,7 +759,7 @@ function ScoreboardPage({
   const [voiceErrorStudent, setVoiceErrorStudent] = useState("");
   const recognitionStudentRef = useRef<any>(null);
 
-  /* ====== PARSER NHÓM (GIỮ NGUYÊN CODE CŨ) ====== */
+  /* ====== PARSER NHÓM (y như gốc) ====== */
 
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
@@ -771,10 +770,8 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Mặc định CỘNG, chỉ TRỪ khi có "tru"
     let sign: 1 | -1 = text.includes("tru") ? -1 : 1;
 
-    // Lấy số CUỐI CÙNG trong câu
     const numMatches = text.match(/\d+/g);
     let amount = 1;
     if (numMatches && numMatches.length > 0) {
@@ -782,10 +779,9 @@ function ScoreboardPage({
       if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
     }
 
-    // Tìm lớp
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
-      const nc = normalizeText(c.name); // "6a2"
+      const nc = normalizeText(c.name);
       const ncNoSpace = nc.replace(/\s+/g, "");
       if (text.includes(nc) || textNoSpace.includes(ncNoSpace)) {
         targetClass = c;
@@ -798,10 +794,9 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm nhóm
     let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
-      const ng = normalizeText(g.name); // "nhom a"
+      const ng = normalizeText(g.name);
       const ngNoSpace = ng.replace(/\s+/g, "");
       if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
         targetGroup = g;
@@ -981,7 +976,6 @@ function ScoreboardPage({
     rec.lang = "vi-VN";
     rec.continuous = false;
     rec.interimResults = false;
-    if ("maxAlternatives" in rec) rec.maxAlternatives = 5;
 
     rec.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript as string;
@@ -1011,7 +1005,6 @@ function ScoreboardPage({
 
   const findMemberInClass = (raw: string, cls: ClassRoom) => {
     const text = normalizeText(raw);
-    // Ưu tiên nhóm đã được nhắc trong câu
     const textNoSpace = text.replace(/\s+/g, "");
 
     const preferredGroupIds = new Set<string>();
@@ -1052,18 +1045,28 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Dấu y hệt nhóm: mặc định cộng, có "tru" thì trừ
-    const sign: 1 | -1 = text.includes("tru") ? -1 : 1;
-
-    const numMatches = text.match(/\d+/g);
+    // Ưu tiên số có dấu âm, ví dụ "-2"
+    const signedMatches = raw.match(/-?\d+/g);
     let amount = 1;
-    if (numMatches && numMatches.length) {
-      const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
-      if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
+    let sign: 1 | -1 = 1;
+
+    if (signedMatches && signedMatches.length > 0) {
+      const lastSigned = signedMatches[signedMatches.length - 1];
+      const value = parseInt(lastSigned, 10);
+      if (Number.isFinite(value) && value !== 0) {
+        amount = Math.abs(value);
+        if (value < 0) sign = -1;
+      }
     }
+
+    // Nếu chưa bắt được số âm thì fallback: có "tru" -> trừ
+    if (sign === 1 && text.includes("tru")) {
+      sign = -1;
+    }
+
     const delta = sign * amount;
 
-    // Tìm lớp (giống nhóm)
+    // Tìm lớp
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
       const nc = normalizeText(c.name);
@@ -1153,7 +1156,6 @@ function ScoreboardPage({
     rec.lang = "vi-VN";
     rec.continuous = false;
     rec.interimResults = false;
-    if ("maxAlternatives" in rec) rec.maxAlternatives = 5;
 
     rec.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript as string;
@@ -1179,7 +1181,7 @@ function ScoreboardPage({
     rec.start();
   };
 
-  /* ====== QUẢN LÝ LỚP / NHÓM / THÀNH VIÊN (NHƯ CŨ) ====== */
+  /* ====== QUẢN LÝ LỚP / NHÓM / HỌC SINH (như cũ) ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -1441,7 +1443,7 @@ function ScoreboardPage({
         </div>
       </div>
 
-      {/* Voice NHÓM (giữ y code cũ) */}
+      {/* Voice NHÓM */}
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
@@ -1508,7 +1510,7 @@ function ScoreboardPage({
         )}
       </div>
 
-      {/* Voice HỌC SINH (nút riêng) */}
+      {/* Voice HỌC SINH */}
       <div className="rounded-2xl bg-indigo-50/70 border border-indigo-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
@@ -1516,7 +1518,7 @@ function ScoreboardPage({
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;lớp 6A2 nhóm A bạn Nam cộng 1 điểm&quot; hoặc &quot;6A2 bạn Lan
-              trừ 1 điểm&quot;.
+              -2 điểm&quot;.
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -1852,7 +1854,6 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
-  // Helper: lấy tên khối từ tên lớp, ví dụ "6A2" -> "Khối 6"
   const getGradeName = (className: string) => {
     const trimmed = className.trim();
     const m = trimmed.match(/^\d+/);
@@ -1860,7 +1861,6 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
     return `Khối ${m[0]}`;
   };
 
-  // Khởi tạo mặc định khi có dữ liệu
   useEffect(() => {
     if (!classes.length) return;
 
@@ -1873,7 +1873,6 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
     }
   }, [classes, selectedClassId, selectedGrade]);
 
-  // Đảm bảo selectedGroupId luôn thuộc về lớp đang chọn
   useEffect(() => {
     if (!classes.length) return;
 
@@ -1910,7 +1909,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
 
   if (view === "grade") {
     description =
-      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một khối (tính theo số đứng đầu tên lớp, ví dụ 6A2 → Khối 6).";
+      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một khối.";
 
     if (selectedGrade) {
       const members: {
@@ -1943,7 +1942,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
     }
   } else if (view === "class") {
     description =
-      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một lớp (tổng hợp từ tất cả các nhóm của lớp đó).";
+      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một lớp.";
 
     if (currentClass) {
       const members: {
@@ -1973,7 +1972,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
     }
   } else {
     description =
-      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một nhóm cụ thể.";
+      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một nhóm.";
 
     if (currentClass && currentGroups.length) {
       const currentGroup =
@@ -2005,8 +2004,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             Bảng Xếp Hạng
           </h2>
           <p className="text-xs md:text-sm text-gray-600">
-            Xếp hạng Hạng 1 – 2 – 3 dựa trên điểm cá nhân của học sinh theo
-            từng khối, lớp hoặc nhóm.
+            Hạng 1 – 2 – 3 theo điểm cá nhân của học sinh.
           </p>
         </div>
 
@@ -2049,7 +2047,6 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
 
       <div className="text-xs md:text-sm text-gray-600">{description}</div>
 
-      {/* Bộ lọc theo khối / lớp / nhóm */}
       {view === "grade" && gradeOptions.length > 0 && (
         <div className="flex items-center gap-2 mt-1">
           <span className="text-[11px] md:text-xs text-gray-500">
@@ -2126,8 +2123,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
 
       {!hasClasses ? (
         <p className="text-sm text-gray-500 mt-2">
-          Chưa có dữ liệu lớp/nhóm/học sinh để xếp hạng. Hãy vào tab
-          &quot;Điểm Số&quot; để tạo lớp, nhóm và thêm học sinh trước.
+          Chưa có dữ liệu để xếp hạng.
         </p>
       ) : !hasPodium ? (
         <p className="text-sm text-gray-500 mt-2">
@@ -2135,14 +2131,6 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
         </p>
       ) : (
         <LeaderboardPodium entries={podiumEntries} />
-      )}
-
-      {hasPodium && (
-        <div className="mt-3 text-[11px] md:text-xs text-gray-500">
-          Điểm dùng để xếp hạng là <b>điểm cá nhân</b> (cột &quot;Điểm cá nhân&quot;
-          của từng học sinh). Hạng Nhất có huy chương vàng to và bục đứng cao
-          hơn Hạng Nhì và Ba.
-        </div>
       )}
     </div>
   );
@@ -2240,7 +2228,6 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   return (
     <div className="mt-3">
       <div className="flex items-end justify-center gap-3 md:gap-6">
-        {/* Thứ tự hiển thị: Nhì - Nhất - Ba để giống bục đứng */}
         {renderSlot(2, second)}
         {renderSlot(1, first)}
         {renderSlot(3, third)}
