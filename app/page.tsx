@@ -90,7 +90,9 @@ function normalizeText(s: string) {
 
 export default function ClassifyPage() {
   const [activeTab, setActiveTab] =
-    useState<"sound" | "scoreboard" | "activity" | "ai">("sound");
+    useState<"sound" | "scoreboard" | "activity" | "leaderboard" | "ai">(
+      "sound",
+    );
 
   /* ====== ÂM THANH + RUNG ====== */
   const [dbLimit, setDbLimit] = useState(60);
@@ -231,6 +233,7 @@ export default function ClassifyPage() {
     { id: "sound" as const, label: "Âm Thanh" },
     { id: "scoreboard" as const, label: "Điểm Số" },
     { id: "activity" as const, label: "Lịch Sử" },
+    { id: "leaderboard" as const, label: "Bảng Xếp Hạng" },
     { id: "ai" as const, label: "Trợ Lý AI" },
   ];
 
@@ -327,6 +330,10 @@ export default function ClassifyPage() {
 
         {activeTab === "activity" && (
           <HistoryPage classes={classes} history={history} />
+        )}
+
+        {activeTab === "leaderboard" && (
+          <LeaderboardPage classes={classes} />
         )}
 
         {activeTab === "ai" && (
@@ -651,16 +658,18 @@ function NoiseMonitorWithControls({
                 style={{ width: `${percent}%` }}
               />
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-semibold text-purple-700">
-                {Math.round(db)}
-              </span>
-              <span className="text-sm text-gray-500">dB</span>
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-semibold text-purple-700">
+                  {Math.round(db)}
+                </span>
+                <span className="text-sm text-gray-500">dB</span>
+              </div>
+              <p className="text-xs text-gray-500 text-center">
+                Giá trị là mức ồn tương đối (0–100), đã được làm mượt để tránh
+                nhấp nháy.
+              </p>
             </div>
-            <p className="text-xs text-gray-500 text-center">
-              Giá trị là mức ồn tương đối (0–100), đã được làm mượt để tránh
-              nhấp nháy.
-            </p>
           </div>
         </div>
 
@@ -1573,6 +1582,281 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ========== BẢNG XẾP HẠNG ========== */
+
+interface LeaderboardPageProps {
+  classes: ClassRoom[];
+}
+
+type LeaderboardView = "grade" | "class" | "group";
+
+function LeaderboardPage({ classes }: LeaderboardPageProps) {
+  const [view, setView] = useState<LeaderboardView>("grade");
+
+  // Tính tổng điểm 1 lớp: tổng điểm nhóm + tổng điểm cá nhân trong các nhóm
+  const getClassTotalScore = (cls: ClassRoom) => {
+    let total = 0;
+    for (const g of cls.groups) {
+      total += g.score;
+      for (const m of g.members) {
+        total += m.score;
+      }
+    }
+    return total;
+  };
+
+  // Lấy tên khối từ tên lớp, ví dụ "6A2" -> "Khối 6"
+  const getGradeName = (className: string) => {
+    const trimmed = className.trim();
+    const m = trimmed.match(/^\d+/);
+    if (!m) return "Khối khác";
+    return `Khối ${m[0]}`;
+  };
+
+  // Top khối
+  const gradeMap = new Map<string, { name: string; score: number }>();
+  classes.forEach((cls) => {
+    const gradeKey = getGradeName(cls.name);
+    const score = getClassTotalScore(cls);
+    const existing = gradeMap.get(gradeKey);
+    if (existing) {
+      existing.score += score;
+    } else {
+      gradeMap.set(gradeKey, { name: gradeKey, score });
+    }
+  });
+  const gradeLeaders = Array.from(gradeMap.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  // Top lớp
+  const classLeaders = classes
+    .map((cls) => ({
+      name: cls.name,
+      score: getClassTotalScore(cls),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  // Top nhóm
+  const groupLeaders: { name: string; score: number; subtitle: string }[] = [];
+  classes.forEach((cls) => {
+    cls.groups.forEach((g) => {
+      let score = g.score;
+      g.members.forEach((m) => {
+        score += m.score;
+      });
+      groupLeaders.push({
+        name: g.name,
+        score,
+        subtitle: `Lớp ${cls.name}`,
+      });
+    });
+  });
+  groupLeaders.sort((a, b) => b.score - a.score);
+  const topGroupLeaders = groupLeaders.slice(0, 3);
+
+  let title = "";
+  let description = "";
+  let data: { name: string; score: number; subtitle?: string }[] = [];
+
+  if (view === "grade") {
+    title = "Top Khối";
+    description =
+      "Xếp hạng các khối theo tổng điểm của tất cả lớp trong khối (tính cả điểm nhóm và điểm cá nhân).";
+    data = gradeLeaders;
+  } else if (view === "class") {
+    title = "Top Lớp";
+    description =
+      "Xếp hạng các lớp theo tổng điểm của tất cả nhóm và học sinh trong lớp.";
+    data = classLeaders;
+  } else {
+    title = "Top Nhóm";
+    description =
+      "Xếp hạng các nhóm mạnh nhất (tổng điểm nhóm cộng với điểm cá nhân của thành viên).";
+    data = topGroupLeaders;
+  }
+
+  const hasData = classes.length > 0 && data.length > 0;
+
+  return (
+    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-5 bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60 max-w-4xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <h2 className="text-lg md:text-xl font-semibold text-purple-800">
+            Bảng Xếp Hạng
+          </h2>
+          <p className="text-xs md:text-sm text-gray-600">
+            Tự động tổng hợp điểm hiện tại để tìm ra hạng Nhất – Nhì – Ba theo
+            khối, lớp và nhóm.
+          </p>
+        </div>
+
+        <div className="inline-flex rounded-full bg-purple-50 p-1 text-xs md:text-sm border border-purple-100">
+          <button
+            type="button"
+            onClick={() => setView("grade")}
+            className={`px-3 py-1 rounded-full font-medium ${
+              view === "grade"
+                ? "bg-white text-purple-700 shadow-sm"
+                : "text-gray-600 hover:text-purple-700"
+            }`}
+          >
+            Top Khối
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("class")}
+            className={`px-3 py-1 rounded-full font-medium ${
+              view === "class"
+                ? "bg-white text-purple-700 shadow-sm"
+                : "text-gray-600 hover:text-purple-700"
+            }`}
+          >
+            Top Lớp
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("group")}
+            className={`px-3 py-1 rounded-full font-medium ${
+              view === "group"
+                ? "bg-white text-purple-700 shadow-sm"
+                : "text-gray-600 hover:text-purple-700"
+            }`}
+          >
+            Top Nhóm
+          </button>
+        </div>
+      </div>
+
+      <div className="text-xs md:text-sm text-gray-600">{description}</div>
+
+      {!classes.length ? (
+        <p className="text-sm text-gray-500">
+          Chưa có dữ liệu lớp / nhóm để xếp hạng. Hãy vào tab &quot;Điểm
+          Số&quot; để tạo lớp, nhóm và cộng điểm trước.
+        </p>
+      ) : !hasData ? (
+        <p className="text-sm text-gray-500">
+          Chưa có điểm nào được cộng, mọi khối/lớp/nhóm đang bằng 0.
+        </p>
+      ) : (
+        <LeaderboardPodium entries={data} />
+      )}
+
+      {hasData && (
+        <div className="mt-3 text-[11px] md:text-xs text-gray-500">
+          Ghi chú: Điểm dùng để xếp hạng = tổng điểm nhóm + tổng điểm cá nhân
+          (trong phạm vi khối / lớp / nhóm tương ứng).
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface PodiumEntry {
+  name: string;
+  score: number;
+  subtitle?: string;
+}
+
+function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
+  // entries đã được sort giảm dần: [hạng1, hạng2, hạng3]
+  const [first, second, third] = entries;
+
+  const renderSlot = (rank: 1 | 2 | 3, entry?: PodiumEntry) => {
+    const medalSize = rank === 1 ? "w-16 h-16" : "w-12 h-12";
+    const baseHeight =
+      rank === 1
+        ? "h-28 md:h-32"
+        : rank === 2
+        ? "h-24 md:h-28"
+        : "h-20 md:h-24";
+
+    const medalBg =
+      rank === 1
+        ? "bg-gradient-to-br from-yellow-400 to-amber-500 border-yellow-300"
+        : rank === 2
+        ? "bg-gradient-to-br from-slate-200 to-slate-400 border-slate-300"
+        : "bg-gradient-to-br from-amber-700 to-orange-500 border-amber-400";
+
+    const baseBg =
+      rank === 1
+        ? "bg-gradient-to-t from-yellow-200 to-yellow-50"
+        : rank === 2
+        ? "bg-gradient-to-t from-slate-200 to-slate-50"
+        : "bg-gradient-to-t from-amber-200 to-amber-50";
+
+    const nameColor =
+      rank === 1
+        ? "text-yellow-800"
+        : rank === 2
+        ? "text-slate-800"
+        : "text-amber-800";
+
+    return (
+      <div
+        key={rank}
+        className="flex flex-col items-center justify-end flex-1 min-w-[84px] md:min-w-[110px]"
+      >
+        {entry && (
+          <>
+            <div className="flex flex-col items-center mb-2">
+              <div
+                className={`flex items-center justify-center rounded-full border-2 shadow-lg ${medalBg} ${medalSize} text-white font-bold text-lg`}
+              >
+                {rank}
+              </div>
+              <div className="mt-1 text-center">
+                <div
+                  className={`text-xs md:text-sm font-semibold ${nameColor} max-w-[8rem] md:max-w-[9rem] truncate`}
+                >
+                  {entry.name}
+                </div>
+                {entry.subtitle && (
+                  <div className="text-[10px] md:text-xs text-gray-500 max-w-[8rem] md:max-w-[9rem] truncate">
+                    {entry.subtitle}
+                  </div>
+                )}
+                <div className="text-[11px] md:text-xs text-gray-700">
+                  {entry.score} điểm
+                </div>
+              </div>
+            </div>
+            <div
+              className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items-end justify-center pb-2 shadow-sm`}
+            >
+              <span className="text-[11px] md:text-xs font-semibold text-gray-700">
+                Hạng {rank}
+              </span>
+            </div>
+          </>
+        )}
+        {!entry && (
+          <div
+            className={`w-full bg-gray-100 ${baseHeight} rounded-t-xl flex items-end justify-center pb-2`}
+          >
+            <span className="text-[11px] md:text-xs font-medium text-gray-400">
+              Chưa có
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-end justify-center gap-3 md:gap-6">
+        {/* Thứ tự hiển thị: Nhì - Nhất - Ba để giống bục đứng */}
+        {renderSlot(2, second)}
+        {renderSlot(1, first)}
+        {renderSlot(3, third)}
+      </div>
     </div>
   );
 }
