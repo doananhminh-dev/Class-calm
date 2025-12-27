@@ -114,6 +114,9 @@ export default function ClassifyPage() {
   const [isMicActive, setIsMicActive] = useState(false);
 
   const lastVibrateRef = useRef<number>(0);
+  const lastSoundRef = useRef<number>(0);
+  const [alertVibrate, setAlertVibrate] = useState(true);
+  const [alertSound, setAlertSound] = useState(false);
 
   useEffect(() => {
     setIsMicActive(noiseStarted);
@@ -129,8 +132,9 @@ export default function ClassifyPage() {
     });
   }, [currentDb, dbLimit, noiseStarted]);
 
+  // RUNG
   useEffect(() => {
-    if (!noiseStarted || !isNoiseExceeded) return;
+    if (!noiseStarted || !isNoiseExceeded || !alertVibrate) return;
 
     const now = Date.now();
     const COOLDOWN_MS = 3000;
@@ -140,7 +144,38 @@ export default function ClassifyPage() {
       navigator.vibrate(2000);
       lastVibrateRef.current = now;
     }
-  }, [isNoiseExceeded, noiseStarted]);
+  }, [isNoiseExceeded, noiseStarted, alertVibrate]);
+
+  // ÂM THANH
+  useEffect(() => {
+    if (!noiseStarted || !isNoiseExceeded || !alertSound) return;
+    if (typeof window === "undefined") return;
+
+    const now = Date.now();
+    const COOLDOWN_MS = 3000;
+    if (now - lastSoundRef.current < COOLDOWN_MS) return;
+
+    const AudioCtx =
+      (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880; // beep nhẹ
+    gain.gain.value = 0.12;
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+    osc.onended = () => {
+      ctx.close();
+    };
+
+    lastSoundRef.current = now;
+  }, [isNoiseExceeded, noiseStarted, alertSound]);
 
   /* ====== LỚP + LỊCH SỬ ====== */
 
@@ -289,12 +324,12 @@ export default function ClassifyPage() {
             </div>
           </div>
 
-          <nav className="flex gap-1 py-2">
+          <nav className="flex gap-1 py-2 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                className={`flex-shrink-0 px-6 py-3 rounded-lg font-medium transition-all ${
                   activeTab === tab.id
                     ? "bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow-lg shadow-purple-500/30"
                     : "text-gray-600 hover:bg-purple-50 hover:text-purple-700"
@@ -318,6 +353,10 @@ export default function ClassifyPage() {
               start={startNoiseMeter}
               stop={stopNoiseMeter}
               isNoiseExceeded={isNoiseExceeded}
+              alertVibrate={alertVibrate}
+              setAlertVibrate={setAlertVibrate}
+              alertSound={alertSound}
+              setAlertSound={setAlertSound}
             />
           </div>
         )}
@@ -582,6 +621,10 @@ interface NoiseMonitorProps {
   start: () => void | Promise<void>;
   stop: () => void;
   isNoiseExceeded: boolean;
+  alertVibrate: boolean;
+  setAlertVibrate: (v: boolean) => void;
+  alertSound: boolean;
+  setAlertSound: (v: boolean) => void;
 }
 
 function NoiseMonitorWithControls({
@@ -592,6 +635,10 @@ function NoiseMonitorWithControls({
   start,
   stop,
   isNoiseExceeded,
+  alertVibrate,
+  setAlertVibrate,
+  alertSound,
+  setAlertSound,
 }: NoiseMonitorProps) {
   const minLimit = 30;
   const maxLimit = 100;
@@ -635,7 +682,7 @@ function NoiseMonitorWithControls({
         </button>
       </div>
 
-      <div className="grid md:grid-cols-[2fr,1.5fr] gap-6">
+      <div className="grid md:grid-cols-[2fr,1.7fr] gap-6">
         <div className="rounded-2xl bg-purple-50/80 border border-purple-100 p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm text-gray-600">Mức ồn hiện tại</span>
@@ -712,9 +759,39 @@ function NoiseMonitorWithControls({
             <li>
               Khi mức ồn vượt quá ngưỡng, trạng thái sẽ chuyển sang{" "}
               <span className="font-medium text-red-600">Vượt ngưỡng</span> và
-              thiết bị sẽ rung trong 2 giây (cooldown 3s).
+              nếu bật cảnh báo, máy sẽ rung hoặc phát âm thanh.
             </li>
           </ul>
+
+          <div className="border-t border-purple-100 pt-3 mt-1">
+            <span className="text-xs font-semibold text-gray-700">
+              Kiểu cảnh báo khi vượt ngưỡng
+            </span>
+            <div className="mt-2 flex gap-4 text-xs">
+              <label className="inline-flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={alertVibrate}
+                  onChange={(e) => setAlertVibrate(e.target.checked)}
+                  className="h-3 w-3 accent-purple-600"
+                />
+                <span>Rung</span>
+              </label>
+              <label className="inline-flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={alertSound}
+                  onChange={(e) => setAlertSound(e.target.checked)}
+                  className="h-3 w-3 accent-purple-600"
+                />
+                <span>Âm thanh nhẹ</span>
+              </label>
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400">
+              Bạn có thể bật cả hai. Nếu tắt hết, khi vượt ngưỡng chỉ đổi màu
+              trạng thái.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -755,7 +832,7 @@ function ScoreboardPage({
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  // Voice HỌC SINH
+  // Voice HS
   const [listeningStudent, setListeningStudent] = useState(false);
   const [lastTranscriptStudent, setLastTranscriptStudent] = useState("");
   const [pendingTranscriptStudent, setPendingTranscriptStudent] =
@@ -763,7 +840,7 @@ function ScoreboardPage({
   const [voiceErrorStudent, setVoiceErrorStudent] = useState("");
   const recognitionStudentRef = useRef<any>(null);
 
-  /* ====== PARSER NHÓM ====== */
+  /* ====== PARSER NHÓM (giống code gốc) ====== */
 
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
@@ -1046,28 +1123,19 @@ function ScoreboardPage({
       return;
     }
 
-    // Chuẩn hoá dấu trừ unicode thành '-'
-    const rawNormSign = raw.replace(/[−–—]/g, "-");
-
-    const text = normalizeText(rawNormSign);
+    // bỏ dấu, chuẩn hóa, không quan tâm dấu '-' nữa, giống nhóm
+    const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Ưu tiên số có dấu âm
-    const signedMatches = rawNormSign.match(/-?\d+/g);
+    // Dấu: giống nhóm – mặc định cộng, có "tru" thì trừ
+    let sign: 1 | -1 = text.includes("tru") ? -1 : 1;
+
+    // Số điểm: lấy số cuối cùng trong câu (giống nhóm)
+    const numMatches = text.match(/\d+/g);
     let amount = 1;
-    let sign: 1 | -1 = 1;
-
-    if (signedMatches && signedMatches.length > 0) {
-      const lastSigned = signedMatches[signedMatches.length - 1];
-      const value = parseInt(lastSigned, 10);
-      if (Number.isFinite(value) && value !== 0) {
-        amount = Math.abs(value);
-        if (value < 0) sign = -1;
-      }
-    }
-
-    if (sign === 1 && text.includes("tru")) {
-      sign = -1;
+    if (numMatches && numMatches.length > 0) {
+      const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
+      if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
     }
 
     const delta = sign * amount;
@@ -1089,7 +1157,7 @@ function ScoreboardPage({
     }
 
     // Tìm HS
-    const hit = findMemberInClass(rawNormSign, targetClass);
+    const hit = findMemberInClass(raw, targetClass);
     if (!hit) {
       setVoiceErrorStudent(
         "Không tìm được học sinh trong lớp. Hãy đọc đúng tên giống trong danh sách.",
@@ -1130,11 +1198,11 @@ function ScoreboardPage({
       groupId: hit.group.id,
       memberId: hit.member.id,
       change: delta,
-      reason: `Giọng nói HS: "${rawNormSign}"`,
+      reason: `Giọng nói HS: "${raw}"`,
       type: "individual",
     });
 
-    setLastTranscriptStudent(rawNormSign);
+    setLastTranscriptStudent(raw);
     setVoiceErrorStudent("");
   };
 
@@ -1533,8 +1601,8 @@ function ScoreboardPage({
             Giọng nói học sinh (điểm HS + nhóm):
             <br />
             <span className="text-[11px] text-gray-500">
-              Ví dụ: &quot;6A2 nhóm 1 bạn An cộng 2 điểm&quot; hoặc &quot;6A2 bạn An -2
-              điểm&quot;.
+              Ví dụ: &quot;6A2 nhóm 1 bạn An cộng 3 điểm&quot; hoặc &quot;6A2 bạn An trừ
+              2 điểm&quot;.
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -2144,7 +2212,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
         </div>
       )}
 
-      {!hasClasses ? (
+      {!classes.length ? (
         <p className="text-sm text-gray-500 mt-2">
           Chưa có dữ liệu để xếp hạng.
         </p>
@@ -2375,7 +2443,7 @@ function AssistantChat() {
         <button
           onClick={handleSend}
           disabled={loading}
-          className="rounded-full bg-gradient-to-r from-purple-500 to-violet-600 px-4 py-2 text-sm font-medium text:white text-white shadow hover:brightness-110 disabled:opacity-60"
+          className="rounded-full bg-gradient-to-r from-purple-500 to-violet-600 px-4 py-2 text-sm font-medium text-white shadow hover:brightness-110 disabled:opacity-60"
         >
           Gửi
         </button>
