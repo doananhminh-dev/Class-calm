@@ -178,7 +178,7 @@ export default function ClassifyPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // ĐỔI SANG v3 ĐỂ BỎ DỮ LIỆU CŨ (4 nhóm A, B, C, D)
+    // Dùng v3 để tránh đọc dữ liệu cũ (4 nhóm A,B,C,D)
     const savedClasses = localStorage.getItem("classify-classes-v3");
     const savedHistory = localStorage.getItem("classify-history-v3");
     const savedDbLimit = localStorage.getItem("classify-dbLimit-v3");
@@ -836,7 +836,7 @@ function ScoreboardPage({
   /* ====== HÀM CHUNG: LẤY DELTA TỪ SỐ CUỐI CÂU ======
      - Dùng số cuối cùng trong câu (sau normalize)
      - Nếu số đó có dấu '-' / '+' -> theo dấu đó
-     - Nếu không có dấu mà ngay trước số có chữ "tru"/"trừ" -> trừ
+     - Nếu không có dấu mà ngay trước số có chữ "tru" -> trừ
      - Nếu không thì coi là cộng
   */
 
@@ -858,7 +858,7 @@ function ScoreboardPage({
     let amount = 1;
 
     if (lastStr === null) {
-      // Không có số -> mặc định 1 điểm, dựa vào từ "trừ"/"tru" trong cả câu
+      // Không có số -> mặc định 1 điểm, dựa vào từ "tru" trong cả câu
       sign = norm.includes("tru") ? -1 : 1;
       amount = 1;
     } else {
@@ -872,7 +872,7 @@ function ScoreboardPage({
         // Có dấu '+': +3 -> cộng 3
         sign = 1;
       } else {
-        // Không có dấu, kiểm tra từ "tru"/"trừ" GẦN TRƯỚC số cuối cùng
+        // Không có dấu, kiểm tra từ "tru" GẦN TRƯỚC số cuối cùng
         const rangeStart = Math.max(0, lastIndex - 10);
         const near = norm.slice(rangeStart, lastIndex); // đoạn ngay trước số
         if (near.includes("tru")) sign = -1;
@@ -1164,7 +1164,7 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Lấy delta dựa trên số cuối cùng + "trừ"/"tru"
+    // Lấy delta dựa trên số cuối cùng + "tru"
     const delta = computeDeltaFromTranscript(raw);
 
     // Tìm lớp
@@ -1309,6 +1309,25 @@ function ScoreboardPage({
     );
   };
 
+  const handleRemoveClass = (cls: ClassRoom) => {
+    if (
+      !window.confirm(
+        `Xoá lớp "${cls.name}"? Tất cả nhóm và học sinh trong lớp sẽ bị xoá khỏi bảng điểm (lịch sử vẫn giữ).`,
+      )
+    )
+      return;
+
+    setClasses((prev) => {
+      const next = prev.filter((c) => c.id !== cls.id);
+      if (next.length === 0) {
+        setActiveClassId("");
+      } else if (cls.id === activeClassId) {
+        setActiveClassId(next[0].id);
+      }
+      return next;
+    });
+  };
+
   const updateActiveClassGroups = (updater: (groups: Group[]) => Group[]) => {
     if (!activeClass) return;
     setClasses((prev) =>
@@ -1337,6 +1356,19 @@ function ScoreboardPage({
     if (!name) return;
     updateActiveClassGroups((groups) =>
       groups.map((g) => (g.id === group.id ? { ...g, name } : g)),
+    );
+  };
+
+  const handleRemoveGroup = (group: Group) => {
+    if (
+      !window.confirm(
+        `Xoá nhóm "${group.name}" cùng toàn bộ học sinh và điểm trong nhóm?`,
+      )
+    )
+      return;
+
+    updateActiveClassGroups((groups) =>
+      groups.filter((g) => g.id !== group.id),
     );
   };
 
@@ -1472,6 +1504,42 @@ function ScoreboardPage({
       memberId: member.id,
       change: delta,
       reason,
+      type: "individual",
+    });
+  };
+
+  // Reset toàn bộ điểm cá nhân 1 học sinh (trừ tương ứng khỏi điểm nhóm)
+  const handleResetSingleMemberScore = (group: Group, member: Member) => {
+    if (member.score === 0) return;
+    if (
+      !window.confirm(
+        `Reset điểm cá nhân của "${member.name}" về 0? Điểm nhóm sẽ giảm ${member.score} điểm.`,
+      )
+    )
+      return;
+
+    const delta = -member.score;
+
+    updateActiveClassGroups((groups) =>
+      groups.map((g) =>
+        g.id === group.id
+          ? {
+              ...g,
+              score: g.score + delta,
+              members: g.members.map((m) =>
+                m.id === member.id ? { ...m, score: 0 } : m,
+              ),
+            }
+          : g,
+      ),
+    );
+
+    onLog({
+      classId: activeClass!.id,
+      groupId: group.id,
+      memberId: member.id,
+      change: delta,
+      reason: "Reset điểm cá nhân về 0",
       type: "individual",
     });
   };
@@ -1692,7 +1760,7 @@ function ScoreboardPage({
         )}
       </div>
 
-      {/* Nhóm & thành viên */}
+      {/* Lớp đang chọn + nút xoá lớp */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-gray-700">
           Lớp đang chọn:{" "}
@@ -1700,6 +1768,12 @@ function ScoreboardPage({
             {activeClass.name}
           </span>
         </h3>
+        <button
+          onClick={() => handleRemoveClass(activeClass)}
+          className="text-[11px] px-2 py-1 rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+        >
+          Xoá lớp này
+        </button>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -1725,7 +1799,7 @@ function ScoreboardPage({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => handleChangeGroupScore(group, 1)}
                 className="px-2 py-1 rounded-full bg-green-50 text-green-700 text-xs border border-green-200"
@@ -1740,9 +1814,15 @@ function ScoreboardPage({
               </button>
               <button
                 onClick={() => handleResetGroupScore(group)}
-                className="ml-auto px-2 py-1 rounded-full bg-gray-50 text-gray-600 text-xs border border-gray-200"
+                className="px-2 py-1 rounded-full bg-gray-50 text-gray-600 text-xs border border-gray-200"
               >
                 Reset điểm nhóm
+              </button>
+              <button
+                onClick={() => handleRemoveGroup(group)}
+                className="ml-auto px-2 py-1 rounded-full bg-red-50 text-red-600 text-xs border border-red-200"
+              >
+                Xoá nhóm
               </button>
             </div>
 
@@ -1798,6 +1878,15 @@ function ScoreboardPage({
                           className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center text-xs"
                         >
                           −
+                        </button>
+                        <button
+                          onClick={() =>
+                            handleResetSingleMemberScore(group, m)
+                          }
+                          className="w-7 h-7 rounded-full bg-yellow-400 text-white flex items-center justify-center text-xs"
+                          title="Reset điểm cá nhân về 0"
+                        >
+                          0
                         </button>
                         <button
                           onClick={() => handleRemoveMember(group, m)}
