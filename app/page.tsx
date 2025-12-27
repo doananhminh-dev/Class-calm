@@ -336,7 +336,6 @@ export default function ClassifyPage() {
         )}
       </main>
 
-      {/* Dev signature */}
       <div className="fixed bottom-2 right-4 text-[11px] text-gray-400 opacity-80 select-none z-20">
         Dev: AnhMinh
       </div>
@@ -349,7 +348,7 @@ export default function ClassifyPage() {
 function BackgroundThreads() {
   return (
     <>
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div className="thread-line thread-1" />
         <div className="thread-line thread-2" />
         <div className="thread-line thread-3" />
@@ -363,17 +362,17 @@ function BackgroundThreads() {
           background: linear-gradient(
             to bottom,
             rgba(168, 85, 247, 0) 0%,
-            rgba(168, 85, 247, 0.85) 35%,
-            rgba(129, 140, 248, 0.85) 60%,
+            rgba(168, 85, 247, 0.9) 35%,
+            rgba(129, 140, 248, 0.9) 60%,
             rgba(129, 140, 248, 0) 100%
           );
-          opacity: 0.4;
+          opacity: 0.5;
           mix-blend-mode: screen;
           filter: blur(0.3px);
         }
 
         .thread-1 {
-          left: 15%;
+          left: 18%;
           animation: threadFloat1 22s linear infinite;
         }
 
@@ -389,7 +388,7 @@ function BackgroundThreads() {
 
         @keyframes threadFloat1 {
           0% {
-            transform: translate3d(-40%, 120%, 0) rotate(10deg);
+            transform: translate3d(-40%, 120%, 0) rotate(8deg);
             opacity: 0;
           }
           10% {
@@ -399,7 +398,7 @@ function BackgroundThreads() {
             opacity: 0.7;
           }
           100% {
-            transform: translate3d(20%, -140%, 0) rotate(-5deg);
+            transform: translate3d(20%, -140%, 0) rotate(-4deg);
             opacity: 0;
           }
         }
@@ -442,7 +441,7 @@ function BackgroundThreads() {
   );
 }
 
-/* ========== NOISE MONITOR HOOK ========== */
+/* ========== NOISE METER HOOK ========== */
 
 let sharedAudioContext: AudioContext | null = null;
 let sharedAnalyser: AnalyserNode | null = null;
@@ -498,9 +497,10 @@ function useNoiseMeter() {
       smoothDbRef.current = 0;
     }
 
-    const SMOOTHING = 0.15;
-    const NOISE_GATE = 5;
-    const MAX_STEP = 3;
+    // Mic nhạy hơn (giảm noise gate, tăng hệ số & step)
+    const SMOOTHING = 0.25;
+    const NOISE_GATE = 1;
+    const MAX_STEP = 5;
 
     const update = () => {
       if (!sharedAnalyser || !dataArrayRef.current) {
@@ -518,7 +518,7 @@ function useNoiseMeter() {
 
       const rms = Math.sqrt(sum / arr.length);
 
-      let rawDb = rms * 120;
+      let rawDb = rms * 170; // nhạy hơn
       if (!isFinite(rawDb) || isNaN(rawDb)) rawDb = 0;
       rawDb = Math.min(100, Math.max(0, rawDb));
 
@@ -563,6 +563,16 @@ function useNoiseMeter() {
 }
 
 /* ========== NOISE MONITOR UI ========== */
+
+interface NoiseMonitorProps {
+  db: number;
+  dbLimit: number;
+  setDbLimit: (value: number) => void;
+  started: boolean;
+  start: () => void | Promise<void>;
+  stop: () => void;
+  isNoiseExceeded: boolean;
+}
 
 function NoiseMonitorWithControls({
   db,
@@ -699,7 +709,7 @@ function NoiseMonitorWithControls({
   );
 }
 
-/* ========== SCOREBOARD (ĐIỂM SỐ + GIỌNG NÓI + AI) ========== */
+/* ========== SCOREBOARD (GIỌNG NÓI + AI) ========== */
 
 interface ScoreboardProps {
   classes: ClassRoom[];
@@ -738,14 +748,14 @@ function ScoreboardPage({
       return;
     }
 
-    const normText = normalizeText(raw);
-    const normNoSpace = normText.replace(/\s+/g, "");
+    const text = normalizeText(raw);
+    const textNoSpace = text.replace(/\s+/g, "");
 
-    // MẶC ĐỊNH CỘNG, chỉ TRỪ khi có "tru"
-    let sign: 1 | -1 = normText.includes("tru") ? -1 : 1;
+    // Mặc định CỘNG, chỉ TRỪ khi có "tru"
+    let sign: 1 | -1 = text.includes("tru") ? -1 : 1;
 
     // Lấy số CUỐI CÙNG trong câu
-    const numMatches = normText.match(/\d+/g);
+    const numMatches = text.match(/\d+/g);
     let amount = 1;
     if (numMatches && numMatches.length > 0) {
       const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
@@ -757,8 +767,7 @@ function ScoreboardPage({
     for (const c of classes) {
       const nc = normalizeText(c.name); // "6a2"
       const ncNoSpace = nc.replace(/\s+/g, "");
-
-      if (normText.includes(nc) || normNoSpace.includes(ncNoSpace)) {
+      if (text.includes(nc) || textNoSpace.includes(ncNoSpace)) {
         targetClass = c;
         break;
       }
@@ -769,17 +778,16 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm nhóm: phải match "nhom a/b/c/d" đầy đủ
+    // Tìm nhóm: PHẢI có "nhom a/b/c/d"
     let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
       const ng = normalizeText(g.name); // "nhom a"
-      const ngNoSpace = ng.replace(/\s+/g, ""); // "nhoma"
-      if (normText.includes(ng) || normNoSpace.includes(ngNoSpace)) {
+      const ngNoSpace = ng.replace(/\s+/g, "");
+      if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
         targetGroup = g;
         break;
       }
     }
-
     if (!targetGroup) {
       setVoiceError(
         'Không xác định được nhóm. Hãy nói rõ: "nhóm A", "nhóm B", "nhóm C"...',
@@ -978,6 +986,8 @@ function ScoreboardPage({
     setListening(true);
     rec.start();
   };
+
+  /* ====== ĐIỂM SỐ THÔNG THƯỜNG & UI ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -1241,7 +1251,7 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Cộng/Trừ điểm nhóm bằng giọng nói (có AI Groq hỗ trợ phân tích).
+            Cộng/Trừ điểm nhóm bằng giọng nói (AI Groq + parser dự phòng).
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2
@@ -1262,7 +1272,7 @@ function ScoreboardPage({
             </button>
             {lastTranscript && (
               <span className="text-[11px] text-gray-500">
-                Đã thực hiện: &quot;{lastTranscript}&quot;
+                Câu lệnh đã thực hiện gần nhất: &quot;{lastTranscript}&quot;
               </span>
             )}
             {voiceError && (
