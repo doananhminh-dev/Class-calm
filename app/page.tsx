@@ -1116,32 +1116,66 @@ function ScoreboardPage({
   };
 
   /* ====== GIỌNG NÓI HỌC SINH ====== */
-
+  // ĐÃ SỬA: Hỗ trợ dấu '-', chữ "trừ"/"tru"
   const applyStudentVoiceCommand = (raw: string) => {
     if (!classes.length) {
       setVoiceErrorStudent("Chưa có lớp nào để cộng/trừ điểm.");
       return;
     }
 
-    // bỏ dấu, chuẩn hóa, không quan tâm dấu '-' nữa, giống nhóm
+    // Chuẩn hoá: bỏ dấu, lowercase, gộp khoảng trắng
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Dấu: giống nhóm – mặc định cộng, có "tru" thì trừ
-    let sign: 1 | -1 = text.includes("tru") ? -1 : 1;
+    // ================== XÁC ĐỊNH DẤU & SỐ ĐIỂM ==================
 
-    // Số điểm: lấy số cuối cùng trong câu (giống nhóm)
-    const numMatches = text.match(/\d+/g);
     let amount = 1;
-    if (numMatches && numMatches.length > 0) {
-      const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
-      if (Number.isFinite(lastNum) && lastNum > 0) amount = lastNum;
+    let sign: 1 | -1 = 1;
+
+    // 1. Ưu tiên bắt số có thể có dấu '-' trong câu gốc
+    //    Ví dụ: "-3", "- 5"
+    const signedMatch = raw.match(/-?\d+/);
+    if (signedMatch) {
+      const n = Number(signedMatch[0]);
+      if (Number.isFinite(n) && n !== 0) {
+        amount = Math.abs(n);
+        sign = n < 0 ? -1 : 1;
+      }
+    } else {
+      // 2. Nếu không có dạng "-3", dùng số bình thường (giống code cũ)
+      const numMatches = text.match(/\d+/g);
+      if (numMatches && numMatches.length > 0) {
+        const lastNum = parseInt(numMatches[numMatches.length - 1], 10);
+        if (Number.isFinite(lastNum) && lastNum > 0) {
+          amount = lastNum;
+        }
+      }
     }
+
+    // 3. Nếu trong câu có từ "trừ" (sau khi bỏ dấu => "tru") thì CHẮC CHẮN là trừ
+    //    Dù trước đó có hay không có dấu '-'
+    if (text.includes("tru")) {
+      sign = -1;
+    }
+
+    // (Tuỳ chọn) Nếu hay nói "âm 3 điểm", có thể coi "âm" là trừ:
+    // if (/\bam\b/.test(text)) {
+    //   sign = -1;
+    // }
 
     const delta = sign * amount;
 
-    // Tìm lớp
+    if (!Number.isFinite(delta) || delta === 0) {
+      setVoiceErrorStudent(
+        "Không xác định được số điểm. Hãy nói rõ: 'cộng 3 điểm' hoặc 'trừ 2 điểm'.",
+      );
+      return;
+    }
+
+    // ================== TÌM LỚP ==================
+
     let targetClass: ClassRoom | null = null;
+
     for (const c of classes) {
       const nc = normalizeText(c.name);
       const ncNoSpace = nc.replace(/\s+/g, "");
@@ -1150,13 +1184,16 @@ function ScoreboardPage({
         break;
       }
     }
+
     if (!targetClass) targetClass = activeClass || classes[0] || null;
+
     if (!targetClass) {
       setVoiceErrorStudent("Không xác định được lớp, hãy chọn lớp ở trên.");
       return;
     }
 
-    // Tìm HS
+    // ================== TÌM HỌC SINH ==================
+
     const hit = findMemberInClass(raw, targetClass);
     if (!hit) {
       setVoiceErrorStudent(
@@ -1165,7 +1202,8 @@ function ScoreboardPage({
       return;
     }
 
-    // Cập nhật HS + nhóm
+    // ================== CẬP NHẬT ĐIỂM HS + NHÓM ==================
+
     setClasses((prev) =>
       prev.map((c) =>
         c.id === targetClass!.id
