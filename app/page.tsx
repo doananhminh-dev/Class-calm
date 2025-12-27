@@ -90,9 +90,9 @@ function normalizeText(s: string) {
 
 export default function ClassifyPage() {
   const [activeTab, setActiveTab] =
-    useState<"sound" | "scoreboard" | "activity" | "leaderboard" | "ai">(
-      "sound",
-    );
+    useState<
+      "sound" | "scoreboard" | "activity" | "leaderboard" | "ai"
+    >("sound");
 
   /* ====== ÂM THANH + RUNG ====== */
   const [dbLimit, setDbLimit] = useState(60);
@@ -658,18 +658,16 @@ function NoiseMonitorWithControls({
                 style={{ width: `${percent}%` }}
               />
             </div>
-            <div className="flex flex-col items-center gap-3">
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-semibold text-purple-700">
-                  {Math.round(db)}
-                </span>
-                <span className="text-sm text-gray-500">dB</span>
-              </div>
-              <p className="text-xs text-gray-500 text-center">
-                Giá trị là mức ồn tương đối (0–100), đã được làm mượt để tránh
-                nhấp nháy.
-              </p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-semibold text-purple-700">
+                {Math.round(db)}
+              </span>
+              <span className="text-sm text-gray-500">dB</span>
             </div>
+            <p className="text-xs text-gray-500 text-center">
+              Giá trị là mức ồn tương đối (0–100), đã được làm mượt để tránh
+              nhấp nháy.
+            </p>
           </div>
         </div>
 
@@ -1596,20 +1594,11 @@ type LeaderboardView = "grade" | "class" | "group";
 
 function LeaderboardPage({ classes }: LeaderboardPageProps) {
   const [view, setView] = useState<LeaderboardView>("grade");
+  const [selectedGrade, setSelectedGrade] = useState<string>("");
+  const [selectedClassId, setSelectedClassId] = useState<string>("");
+  const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
-  // Tính tổng điểm 1 lớp: tổng điểm nhóm + tổng điểm cá nhân trong các nhóm
-  const getClassTotalScore = (cls: ClassRoom) => {
-    let total = 0;
-    for (const g of cls.groups) {
-      total += g.score;
-      for (const m of g.members) {
-        total += m.score;
-      }
-    }
-    return total;
-  };
-
-  // Lấy tên khối từ tên lớp, ví dụ "6A2" -> "Khối 6"
+  // Helper: lấy tên khối từ tên lớp, ví dụ "6A2" -> "Khối 6"
   const getGradeName = (className: string) => {
     const trimmed = className.trim();
     const m = trimmed.match(/^\d+/);
@@ -1617,71 +1606,142 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
     return `Khối ${m[0]}`;
   };
 
-  // Top khối
-  const gradeMap = new Map<string, { name: string; score: number }>();
-  classes.forEach((cls) => {
-    const gradeKey = getGradeName(cls.name);
-    const score = getClassTotalScore(cls);
-    const existing = gradeMap.get(gradeKey);
-    if (existing) {
-      existing.score += score;
-    } else {
-      gradeMap.set(gradeKey, { name: gradeKey, score });
+  // Khởi tạo mặc định khi có dữ liệu
+  useEffect(() => {
+    if (!classes.length) return;
+
+    if (!selectedClassId) {
+      setSelectedClassId(classes[0].id);
     }
-  });
-  const gradeLeaders = Array.from(gradeMap.values())
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
 
-  // Top lớp
-  const classLeaders = classes
-    .map((cls) => ({
-      name: cls.name,
-      score: getClassTotalScore(cls),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+    if (!selectedGrade) {
+      setSelectedGrade(getGradeName(classes[0].name));
+    }
+  }, [classes, selectedClassId, selectedGrade]);
 
-  // Top nhóm
-  const groupLeaders: { name: string; score: number; subtitle: string }[] = [];
-  classes.forEach((cls) => {
-    cls.groups.forEach((g) => {
-      let score = g.score;
-      g.members.forEach((m) => {
-        score += m.score;
-      });
-      groupLeaders.push({
-        name: g.name,
-        score,
-        subtitle: `Lớp ${cls.name}`,
-      });
-    });
-  });
-  groupLeaders.sort((a, b) => b.score - a.score);
-  const topGroupLeaders = groupLeaders.slice(0, 3);
+  // Đảm bảo selectedGroupId luôn thuộc về lớp đang chọn
+  useEffect(() => {
+    if (!classes.length) return;
 
-  let title = "";
+    const currentClass =
+      classes.find((c) => c.id === selectedClassId) || classes[0];
+
+    if (!currentClass) return;
+
+    if (!currentClass.groups.length) {
+      setSelectedGroupId("");
+      return;
+    }
+
+    const hasCurrentGroup = currentClass.groups.some(
+      (g) => g.id === selectedGroupId,
+    );
+
+    if (!selectedGroupId || !hasCurrentGroup) {
+      setSelectedGroupId(currentClass.groups[0].id);
+    }
+  }, [classes, selectedClassId, selectedGroupId]);
+
+  const gradeOptions = Array.from(
+    new Set(classes.map((c) => getGradeName(c.name))),
+  );
+
+  const currentClass =
+    classes.find((c) => c.id === selectedClassId) || classes[0] || null;
+
+  const currentGroups = currentClass?.groups ?? [];
+
   let description = "";
-  let data: { name: string; score: number; subtitle?: string }[] = [];
+  let podiumEntries: PodiumEntry[] = [];
 
   if (view === "grade") {
-    title = "Top Khối";
     description =
-      "Xếp hạng các khối theo tổng điểm của tất cả lớp trong khối (tính cả điểm nhóm và điểm cá nhân).";
-    data = gradeLeaders;
+      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một khối (tính theo số đứng đầu tên lớp, ví dụ 6A2 → Khối 6).";
+
+    if (selectedGrade) {
+      const members: {
+        member: Member;
+        className: string;
+        groupName: string;
+      }[] = [];
+
+      classes.forEach((cls) => {
+        if (getGradeName(cls.name) !== selectedGrade) return;
+        cls.groups.forEach((g) => {
+          g.members.forEach((m) =>
+            members.push({
+              member: m,
+              className: cls.name,
+              groupName: g.name,
+            }),
+          );
+        });
+      });
+
+      podiumEntries = members
+        .sort((a, b) => b.member.score - a.member.score)
+        .slice(0, 3)
+        .map(({ member, className, groupName }) => ({
+          name: member.name,
+          score: member.score,
+          subtitle: `Lớp ${className} • ${groupName}`,
+        }));
+    }
   } else if (view === "class") {
-    title = "Top Lớp";
     description =
-      "Xếp hạng các lớp theo tổng điểm của tất cả nhóm và học sinh trong lớp.";
-    data = classLeaders;
+      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một lớp (tổng hợp từ tất cả các nhóm của lớp đó).";
+
+    if (currentClass) {
+      const members: {
+        member: Member;
+        className: string;
+        groupName: string;
+      }[] = [];
+
+      currentClass.groups.forEach((g) => {
+        g.members.forEach((m) =>
+          members.push({
+            member: m,
+            className: currentClass.name,
+            groupName: g.name,
+          }),
+        );
+      });
+
+      podiumEntries = members
+        .sort((a, b) => b.member.score - a.member.score)
+        .slice(0, 3)
+        .map(({ member, className, groupName }) => ({
+          name: member.name,
+          score: member.score,
+          subtitle: `Lớp ${className} • ${groupName}`,
+        }));
+    }
   } else {
-    title = "Top Nhóm";
     description =
-      "Xếp hạng các nhóm mạnh nhất (tổng điểm nhóm cộng với điểm cá nhân của thành viên).";
-    data = topGroupLeaders;
+      "Hiển thị 3 học sinh có điểm cá nhân cao nhất trong một nhóm cụ thể.";
+
+    if (currentClass && currentGroups.length) {
+      const currentGroup =
+        currentGroups.find((g) => g.id === selectedGroupId) ||
+        currentGroups[0];
+
+      if (currentGroup) {
+        podiumEntries = currentGroup.members
+          .slice()
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
+          .map((member) => ({
+            name: member.name,
+            score: member.score,
+            subtitle: `Lớp ${currentClass.name} • ${currentGroup.name}`,
+          }));
+      }
+    }
   }
 
-  const hasData = classes.length > 0 && data.length > 0;
+  const hasClasses = classes.length > 0;
+  const hasPodium = podiumEntries.length > 0;
 
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-5 bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60 max-w-4xl mx-auto">
@@ -1691,8 +1751,8 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             Bảng Xếp Hạng
           </h2>
           <p className="text-xs md:text-sm text-gray-600">
-            Tự động tổng hợp điểm hiện tại để tìm ra hạng Nhất – Nhì – Ba theo
-            khối, lớp và nhóm.
+            Xếp hạng Hạng 1 – 2 – 3 dựa trên điểm cá nhân của học sinh theo
+            từng khối, lớp hoặc nhóm.
           </p>
         </div>
 
@@ -1735,23 +1795,99 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
 
       <div className="text-xs md:text-sm text-gray-600">{description}</div>
 
-      {!classes.length ? (
-        <p className="text-sm text-gray-500">
-          Chưa có dữ liệu lớp / nhóm để xếp hạng. Hãy vào tab &quot;Điểm
-          Số&quot; để tạo lớp, nhóm và cộng điểm trước.
-        </p>
-      ) : !hasData ? (
-        <p className="text-sm text-gray-500">
-          Chưa có điểm nào được cộng, mọi khối/lớp/nhóm đang bằng 0.
-        </p>
-      ) : (
-        <LeaderboardPodium entries={data} />
+      {/* Bộ lọc theo khối / lớp / nhóm */}
+      {view === "grade" && gradeOptions.length > 0 && (
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-[11px] md:text-xs text-gray-500">
+            Chọn khối:
+          </span>
+          <select
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            value={selectedGrade || gradeOptions[0]}
+            onChange={(e) => setSelectedGrade(e.target.value)}
+          >
+            {gradeOptions.map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
-      {hasData && (
+      {view === "class" && classes.length > 0 && (
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-[11px] md:text-xs text-gray-500">
+            Chọn lớp:
+          </span>
+          <select
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            value={currentClass?.id || ""}
+            onChange={(e) => setSelectedClassId(e.target.value)}
+          >
+            {classes.map((cls) => (
+              <option key={cls.id} value={cls.id}>
+                {cls.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {view === "group" && classes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          <span className="text-[11px] md:text-xs text-gray-500">
+            Chọn lớp / nhóm:
+          </span>
+          <select
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            value={currentClass?.id || ""}
+            onChange={(e) => setSelectedClassId(e.target.value)}
+          >
+            {classes.map((cls) => (
+              <option key={cls.id} value={cls.id}>
+                {cls.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            value={selectedGroupId}
+            onChange={(e) => setSelectedGroupId(e.target.value)}
+            disabled={!currentGroups.length}
+          >
+            {currentGroups.length === 0 ? (
+              <option value="">Chưa có nhóm</option>
+            ) : (
+              currentGroups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+      )}
+
+      {!hasClasses ? (
+        <p className="text-sm text-gray-500 mt-2">
+          Chưa có dữ liệu lớp/nhóm/học sinh để xếp hạng. Hãy vào tab
+          &quot;Điểm Số&quot; để tạo lớp, nhóm và thêm học sinh trước.
+        </p>
+      ) : !hasPodium ? (
+        <p className="text-sm text-gray-500 mt-2">
+          Chưa có học sinh nào có điểm trong phạm vi đang chọn.
+        </p>
+      ) : (
+        <LeaderboardPodium entries={podiumEntries} />
+      )}
+
+      {hasPodium && (
         <div className="mt-3 text-[11px] md:text-xs text-gray-500">
-          Ghi chú: Điểm dùng để xếp hạng = tổng điểm nhóm + tổng điểm cá nhân
-          (trong phạm vi khối / lớp / nhóm tương ứng).
+          Điểm dùng để xếp hạng là <b>điểm cá nhân</b> (cột &quot;Điểm cá
+          nhân&quot; của từng học sinh). Hạng Nhất có huy chương vàng to và
+          bục đứng cao hơn Hạng Nhì và Ba.
         </div>
       )}
     </div>
