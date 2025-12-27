@@ -58,8 +58,16 @@ function generateId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// Đổi sang 6 nhóm, tên Nhóm 1–6
 function createDefaultGroups(): Group[] {
-  const names = ["Nhóm A", "Nhóm B", "Nhóm C", "Nhóm D"];
+  const names = [
+    "Nhóm 1",
+    "Nhóm 2",
+    "Nhóm 3",
+    "Nhóm 4",
+    "Nhóm 5",
+    "Nhóm 6",
+  ];
   return names.map((name, idx) => ({
     id: `group-${idx + 1}-${Math.random().toString(36).slice(2, 6)}`,
     name,
@@ -740,7 +748,7 @@ function ScoreboardPage({
   const activeClass =
     classes.find((c) => c.id === activeClassId) || classes[0] || null;
 
-  // Voice NHÓM (giữ logic cũ)
+  // Voice NHÓM (giữ y như code gốc)
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
   const [pendingTranscript, setPendingTranscript] = useState("");
@@ -755,7 +763,7 @@ function ScoreboardPage({
   const [voiceErrorStudent, setVoiceErrorStudent] = useState("");
   const recognitionStudentRef = useRef<any>(null);
 
-  /* ====== PARSER NHÓM (y như gốc) ====== */
+  /* ====== PARSER NHÓM ====== */
 
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
@@ -801,7 +809,7 @@ function ScoreboardPage({
     }
     if (!targetGroup) {
       setVoiceError(
-        'Không xác định được nhóm. Hãy nói rõ: "nhóm A", "nhóm B", "nhóm C"...',
+        'Không xác định được nhóm. Hãy nói rõ: "nhóm 1", "nhóm 2", ...',
       );
       return;
     }
@@ -899,7 +907,7 @@ function ScoreboardPage({
 
       if (!targetGroup) {
         setVoiceError(
-          'AI không khớp được tên nhóm. Hãy nói rõ "Nhóm A/B/C/D".',
+          'AI không khớp được tên nhóm. Hãy nói rõ "Nhóm 1/2/3..."',
         );
         return;
       }
@@ -1030,7 +1038,7 @@ function ScoreboardPage({
     return null;
   };
 
-  /* ====== GIỌNG NÓI HỌC SINH (NÚT RIÊNG, LOCAL PARSE) ====== */
+  /* ====== GIỌNG NÓI HỌC SINH (NÚT RIÊNG) ====== */
 
   const applyStudentVoiceCommand = (raw: string) => {
     if (!classes.length) {
@@ -1038,7 +1046,7 @@ function ScoreboardPage({
       return;
     }
 
-    // Chuẩn hoá các loại dấu trừ unicode (−, –, —) thành '-'
+    // Chuẩn hoá dấu trừ unicode thành '-'
     const rawNormSign = raw.replace(/[−–—]/g, "-");
 
     const text = normalizeText(rawNormSign);
@@ -1081,7 +1089,7 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm học sinh theo tên
+    // Tìm HS
     const hit = findMemberInClass(rawNormSign, targetClass);
     if (!hit) {
       setVoiceErrorStudent(
@@ -1090,7 +1098,7 @@ function ScoreboardPage({
       return;
     }
 
-    // Áp dụng delta cho điểm cá nhân
+    // Cập nhật: điểm HS + điểm nhóm cùng +delta
     setClasses((prev) =>
       prev.map((c) =>
         c.id === targetClass!.id
@@ -1100,6 +1108,7 @@ function ScoreboardPage({
                 g.id === hit.group.id
                   ? {
                       ...g,
+                      score: g.score + delta,
                       members: g.members.map((m) =>
                         m.id === hit.member.id
                           ? { ...m, score: m.score + delta }
@@ -1181,7 +1190,7 @@ function ScoreboardPage({
     rec.start();
   };
 
-  /* ====== CRUD LỚP / NHÓM / HỌC SINH (như cũ) ====== */
+  /* ====== CRUD LỚP / NHÓM / HS (chuẩn) ====== */
 
   const handleAddClass = () => {
     const name = window.prompt("Nhập tên lớp mới (ví dụ: 10A1):")?.trim();
@@ -1216,7 +1225,7 @@ function ScoreboardPage({
   const handleAddGroup = () => {
     if (!activeClass) return;
     const name =
-      window.prompt("Tên nhóm mới (ví dụ: Nhóm E):", "Nhóm mới")?.trim();
+      window.prompt("Tên nhóm mới (ví dụ: Nhóm 7):", "Nhóm mới")?.trim();
     if (!name) return;
     const newGroup: Group = {
       id: generateId("group"),
@@ -1329,6 +1338,7 @@ function ScoreboardPage({
     );
   };
 
+  // + / - cá nhân bằng nút: cập nhật luôn điểm nhóm
   const handleChangeMemberScore = (
     group: Group,
     member: Member,
@@ -1351,6 +1361,7 @@ function ScoreboardPage({
         g.id === group.id
           ? {
               ...g,
+              score: g.score + delta,
               members: g.members.map((m) =>
                 m.id === member.id ? { ...m, score: m.score + delta } : m,
               ),
@@ -1369,22 +1380,28 @@ function ScoreboardPage({
     });
   };
 
+  // Reset cá nhân: trừ tổng điểm cá nhân ra khỏi điểm nhóm
   const handleResetMemberScores = (group: Group) => {
     if (
       !window.confirm(
-        `Reset toàn bộ điểm cá nhân trong nhóm "${group.name}" về 0? Điểm nhóm không đổi.`,
+        `Reset toàn bộ điểm cá nhân trong nhóm "${group.name}" về 0? Điểm nhóm sẽ giảm tương ứng.`,
       )
     )
       return;
+
     updateActiveClassGroups((groups) =>
-      groups.map((g) =>
-        g.id === group.id
-          ? {
-              ...g,
-              members: g.members.map((m) => ({ ...m, score: 0 })),
-            }
-          : g,
-      ),
+      groups.map((g) => {
+        if (g.id !== group.id) return g;
+        const totalMemberScore = g.members.reduce(
+          (sum, m) => sum + m.score,
+          0,
+        );
+        return {
+          ...g,
+          score: g.score - totalMemberScore,
+          members: g.members.map((m) => ({ ...m, score: 0 })),
+        };
+      }),
     );
   };
 
@@ -1414,7 +1431,7 @@ function ScoreboardPage({
             Quản Lý Điểm Số
           </h2>
           <p className="text-xs md:text-sm text-gray-600">
-            Mỗi lớp có các nhóm, học sinh, điểm nhóm và điểm cá nhân riêng.
+            Mỗi lớp có 6 nhóm, học sinh, điểm nhóm và điểm cá nhân riêng.
           </p>
         </div>
 
@@ -1447,10 +1464,10 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Cộng/Trừ điểm nhóm bằng giọng nói.
+            Giọng nói nhóm:
             <br />
             <span className="text-[11px] text-gray-500">
-              Ví dụ: &quot;lớp 6A2 nhóm A cộng 5 điểm&quot; hoặc &quot;7A2 nhóm B trừ 2
+              Ví dụ: &quot;lớp 6A2 nhóm 1 cộng 5 điểm&quot; hoặc &quot;7A2 nhóm 2 trừ 2
               điểm&quot;.
             </span>
           </div>
@@ -1514,11 +1531,11 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-indigo-50/70 border border-indigo-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Cộng/Trừ điểm cá nhân bằng giọng nói.
+            Giọng nói học sinh (điểm HS + nhóm):
             <br />
             <span className="text-[11px] text-gray-500">
-              Ví dụ: &quot;lớp 6A2 nhóm A bạn Nam cộng 1 điểm&quot;, hoặc &quot;6A2 bạn An
-              -2 điểm&quot;.
+              Ví dụ: &quot;6A2 nhóm 1 bạn An cộng 2 điểm&quot; hoặc &quot;6A2 bạn An -2
+              điểm&quot;.
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -1553,7 +1570,8 @@ function ScoreboardPage({
               <span className="italic">&quot;{pendingTranscriptStudent}&quot;</span>
             </div>
             <p className="mt-1 text-[11px] text-gray-500">
-              Nếu đúng, bấm &quot;Đúng, thực hiện&quot; để cộng/trừ điểm cá nhân.
+              Nếu đúng, bấm &quot;Đúng, thực hiện&quot; để cộng/trừ điểm cá nhân và điểm
+              nhóm tương ứng.
             </p>
             <div className="mt-2 flex gap-2">
               <button
@@ -1704,7 +1722,8 @@ function ScoreboardPage({
                   onClick={() => handleResetMemberScores(group)}
                   className="mt-2 text-[11px] text-gray-500 hover:text-gray-700 underline"
                 >
-                  Reset toàn bộ điểm cá nhân trong nhóm
+                  Reset toàn bộ điểm cá nhân trong nhóm (điểm nhóm giảm tương
+                  ứng)
                 </button>
               )}
             </div>
@@ -2008,7 +2027,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
           </p>
         </div>
 
-      <div className="inline-flex rounded-full bg-purple-50 p-1 text-xs md:text-sm border border-purple-100">
+        <div className="inline-flex rounded-full bg-purple-50 p-1 text-xs md:text-sm border border-purple-100">
           <button
             type="button"
             onClick={() => setView("grade")}
@@ -2132,106 +2151,6 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
       ) : (
         <LeaderboardPodium entries={podiumEntries} />
       )}
-    </div>
-  );
-}
-
-interface PodiumEntry {
-  name: string;
-  score: number;
-  subtitle?: string;
-}
-
-function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
-  const [first, second, third] = entries;
-
-  const renderSlot = (rank: 1 | 2 | 3, entry?: PodiumEntry) => {
-    const medalSize = rank === 1 ? "w-16 h-16" : "w-12 h-12";
-    const baseHeight =
-      rank === 1
-        ? "h-28 md:h-32"
-        : rank === 2
-        ? "h-24 md:h-28"
-        : "h-20 md:h-24";
-
-    const medalBg =
-      rank === 1
-        ? "bg-gradient-to-br from-yellow-400 to-amber-500 border-yellow-300"
-        : rank === 2
-        ? "bg-gradient-to-br from-slate-200 to-slate-400 border-slate-300"
-        : "bg-gradient-to-br from-amber-700 to-orange-500 border-amber-400";
-
-    const baseBg =
-      rank === 1
-        ? "bg-gradient-to-t from-yellow-200 to-yellow-50"
-        : rank === 2
-        ? "bg-gradient-to-t from-slate-200 to-slate-50"
-        : "bg-gradient-to-t from-amber-200 to-amber-50";
-
-    const nameColor =
-      rank === 1
-        ? "text-yellow-800"
-        : rank === 2
-        ? "text-slate-800"
-        : "text-amber-800";
-
-    return (
-      <div
-        key={rank}
-        className="flex flex-col items-center justify-end flex-1 min-w-[84px] md:min-w-[110px]"
-      >
-        {entry ? (
-          <>
-            <div className="flex flex-col items-center mb-2">
-              <div
-                className={`flex items-center justify-center rounded-full border-2 shadow-lg ${medalBg} ${medalSize} text-white font-bold text-lg`}
-              >
-                {rank}
-              </div>
-              <div className="mt-1 text-center">
-                <div
-                  className={`text-xs md:text-sm font-semibold ${nameColor} max-w-[8rem] md:max-w-[9rem] truncate`}
-                >
-                  {entry.name}
-                </div>
-                {entry.subtitle && (
-                  <div className="text-[10px] md:text-xs text-gray-500 max-w-[8rem] md:max-w-[9rem] truncate">
-                    {entry.subtitle}
-                  </div>
-                )}
-                <div className="text-[11px] md:text-xs text-gray-700">
-                  {entry.score} điểm
-                </div>
-              </div>
-            </div>
-            <div
-              className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items-end justify-center pb-2 shadow-sm`}
-            >
-              <span className="text-[11px] md:text-xs font-semibold text-gray-700">
-                Hạng {rank}
-              </span>
-            </div>
-          </>
-        ) : (
-          <div
-            className={`w-full bg-gray-100 ${baseHeight} rounded-t-xl flex items-end justify-center pb-2`}
-          >
-            <span className="text-[11px] md:text-xs font-medium text-gray-400">
-              Chưa có
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="mt-3">
-      <div className="flex items-end justify-center gap-3 md:gap-6">
-        {renderSlot(2, second)}
-        {renderSlot(1, first)}
-        {renderSlot(3, third)}
-      </div>
     </div>
   );
 }
