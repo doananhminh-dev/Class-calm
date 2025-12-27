@@ -142,7 +142,7 @@ export default function ClassifyPage() {
     }
   }, [isNoiseExceeded, noiseStarted]);
 
-  /* ====== LỚP HỌC + ĐIỂM & LỊCH SỬ ====== */
+  /* ====== LỚP + LỊCH SỬ ====== */
 
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [history, setHistory] = useState<PointHistoryEntry[]>([]);
@@ -1420,7 +1420,7 @@ function ScoreboardPage({
     );
   }
 
-  /* ====== JSX ====== */
+  /* ====== JSX SCOREBOARD ====== */
 
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60">
@@ -1463,7 +1463,7 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-purple-50/70 border border-purple-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Giọng nói nhóm.
+            Giọng nói nhóm:
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;lớp 6A2 nhóm 1 cộng 5 điểm&quot; hoặc &quot;7A2 nhóm 2 trừ 2
@@ -1530,7 +1530,7 @@ function ScoreboardPage({
       <div className="rounded-2xl bg-indigo-50/70 border border-indigo-100 p-3 flex flex-col gap-2">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="text-xs md:text-sm text-gray-700">
-            Giọng nói học sinh (điểm HS + nhóm).
+            Giọng nói học sinh (điểm HS + nhóm):
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;6A2 nhóm 1 bạn An cộng 2 điểm&quot; hoặc &quot;6A2 bạn An -2
@@ -2375,7 +2375,7 @@ function AssistantChat() {
         <button
           onClick={handleSend}
           disabled={loading}
-          className="rounded-full bg-gradient-to-r from-purple-500 to-violet-600 px-4 py-2 text-sm font-medium text-white shadow hover:brightness-110 disabled:opacity-60"
+          className="rounded-full bg-gradient-to-r from-purple-500 to-violet-600 px-4 py-2 text-sm font-medium text:white text-white shadow hover:brightness-110 disabled:opacity-60"
         >
           Gửi
         </button>
