@@ -324,6 +324,11 @@ export default function ClassifyPage() {
           </div>
         )}
       </main>
+
+      {/* Chữ nhỏ góc phải dưới */}
+      <div className="fixed bottom-2 right-4 text-[11px] text-gray-400 opacity-80 select-none">
+        Dev: AnhMinh
+      </div>
     </div>
   );
 }
@@ -645,22 +650,21 @@ function ScoreboardPage({
     let text = normalize(raw);
 
     let sign: 1 | -1 | null = null;
-    // linh hoạt hơn: chỉ cần chứa "cong" hoặc "tru"
     if (text.includes("tru")) sign = -1;
     if (text.includes("cong") || text.includes("con ")) sign = 1;
 
     if (sign === null) {
       setVoiceError(
-        'Không nhận ra "cộng" hay "trừ". Hãy nói rõ: "lớp 6A2 nhóm A cộng 5 điểm".',
+        'Không nhận ra "cộng" hay "trừ". Hãy nói: "lớp 6A2 nhóm A cộng 5 điểm".',
       );
       return;
     }
 
-    // Lấy SỐ CUỐI CÙNG trong câu, để tránh nhầm số lớp 6A2
+    // Lấy SỐ CUỐI CÙNG trong câu (tránh lấy số lớp như 6 trong 6A2)
     const numMatches = text.match(/\d+/g);
     let amount = 1;
     if (numMatches && numMatches.length > 0) {
-      amount = parseInt(numMatches[numMatches.length - 1], 10); // số cuối
+      amount = parseInt(numMatches[numMatches.length - 1], 10);
     }
     if (!Number.isFinite(amount) || amount <= 0) amount = 1;
 
@@ -676,7 +680,7 @@ function ScoreboardPage({
 
     let targetGroup: Group | null = null;
     for (const g of targetClass.groups) {
-      const full = normalize(g.name); // "nhom a"
+      const full = normalize(g.name);
       const short = full.replace("nhom ", "");
       if (text.includes(full) || (short && text.includes(short))) {
         targetGroup = g;
