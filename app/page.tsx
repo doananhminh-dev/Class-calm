@@ -155,7 +155,7 @@ export default function ClassifyPage() {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
-    osc.frequency.value = 880; // beep nhẹ
+    osc.frequency.value = 880;
     gain.gain.value = 0.12;
 
     osc.connect(gain);
@@ -178,7 +178,6 @@ export default function ClassifyPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Dùng v3 để tránh đọc dữ liệu cũ (4 nhóm A,B,C,D)
     const savedClasses = localStorage.getItem("classify-classes-v3");
     const savedHistory = localStorage.getItem("classify-history-v3");
     const savedDbLimit = localStorage.getItem("classify-dbLimit-v3");
@@ -833,50 +832,108 @@ function ScoreboardPage({
   const [voiceErrorStudent, setVoiceErrorStudent] = useState("");
   const recognitionStudentRef = useRef<any>(null);
 
-  /* ====== HÀM CHUNG: LẤY DELTA TỪ SỐ CUỐI CÂU ======
-     - Dùng số cuối cùng trong câu (sau normalize)
-     - Nếu số đó có dấu '-' / '+' -> theo dấu đó
-     - Nếu không có dấu mà ngay trước số có chữ "tru" -> trừ
-     - Nếu không thì coi là cộng
-  */
+  /* ====== HELPER: SỐ, NHÓM, ĐIỂM ====== */
+
+  const wordToNumber: Record<string, number> = {
+    mot: 1,
+    nhat: 1,
+    hai: 2,
+    ba: 3,
+    bon: 4,
+    tu: 4,
+    nam: 5,
+    lam: 5,
+    sau: 6,
+  };
+
+  const getFirstNumberFromString = (s: string): number | null => {
+    const m = s.match(/\d+/);
+    if (!m) return null;
+    const n = parseInt(m[0], 10);
+    if (!Number.isFinite(n)) return null;
+    return n;
+  };
+
+  const extractGroupNumberFromText = (text: string): number | null => {
+    const words = text.split(/\s+/);
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      if (w === "nhom" || w === "nhom:" || w === "nhom,") {
+        let j = i + 1;
+        if (j < words.length && words[j] === "so") j++;
+        if (j >= words.length) continue;
+
+        let token = words[j].replace(/[^0-9a-z]/g, "");
+        if (!token) continue;
+
+        if (/^\d+$/.test(token)) {
+          const n = parseInt(token, 10);
+          if (Number.isFinite(n) && n > 0) return n;
+        }
+        if (wordToNumber[token]) return wordToNumber[token];
+      }
+    }
+    return null;
+  };
+
+  const findGroupByNumber = (cls: ClassRoom, groupNumber: number): Group | null => {
+    if (groupNumber <= 0) return null;
+
+    for (const g of cls.groups) {
+      const ng = normalizeText(g.name);
+      const n = getFirstNumberFromString(ng);
+      if (n === groupNumber) return g;
+    }
+
+    const idx = groupNumber - 1;
+    if (idx >= 0 && idx < cls.groups.length) return cls.groups[idx];
+    return null;
+  };
 
   const computeDeltaFromTranscript = (raw: string): number => {
-    const norm = normalizeText(raw); // bỏ dấu, thường, gộp space
+    const norm = normalizeText(raw);
 
-    // Tìm TẤT CẢ các số (có thể có dấu + / - trước)
-    const regex = /[+-]?\d+/g;
-    let match: RegExpExecArray | null;
-    let lastStr: string | null = null;
+    const digitRegex = /\d+/g;
+    let m: RegExpExecArray | null;
+    let lastDigits: string | null = null;
     let lastIndex = -1;
 
-    while ((match = regex.exec(norm)) !== null) {
-      lastStr = match[0];
-      lastIndex = match.index;
+    while ((m = digitRegex.exec(norm)) !== null) {
+      lastDigits = m[0];
+      lastIndex = m.index;
     }
 
     let sign: 1 | -1 = 1;
     let amount = 1;
 
-    if (lastStr === null) {
-      // Không có số -> mặc định 1 điểm, dựa vào từ "tru" trong cả câu
-      sign = norm.includes("tru") ? -1 : 1;
+    if (!lastDigits) {
+      if (norm.includes("tru") || norm.includes("am")) sign = -1;
+      else sign = 1;
       amount = 1;
     } else {
-      const n = parseInt(lastStr, 10);
-      amount = Math.abs(Number.isFinite(n) ? n : 1);
+      amount = parseInt(lastDigits, 10);
+      if (!Number.isFinite(amount) || amount <= 0) amount = 1;
 
-      if (lastStr.startsWith("-")) {
-        // Có dấu '-' ngay trước số: -3 -> trừ 3
-        sign = -1;
-      } else if (lastStr.startsWith("+")) {
-        // Có dấu '+': +3 -> cộng 3
-        sign = 1;
+      let explicit: 1 | -1 | 0 = 0;
+      let i = lastIndex - 1;
+      while (i >= 0 && /\s/.test(norm[i])) i--;
+
+      if (i >= 0) {
+        const ch = norm[i];
+        if ("-−–—".includes(ch)) {
+          explicit = -1;
+        } else if (ch === "+") {
+          explicit = 1;
+        }
+      }
+
+      if (explicit !== 0) {
+        sign = explicit as 1 | -1;
       } else {
-        // Không có dấu, kiểm tra từ "tru" GẦN TRƯỚC số cuối cùng
-        const rangeStart = Math.max(0, lastIndex - 10);
-        const near = norm.slice(rangeStart, lastIndex); // đoạn ngay trước số
-        if (near.includes("tru")) sign = -1;
-        else sign = 1; // mặc định cộng
+        const nearStart = Math.max(0, lastIndex - 15);
+        const near = norm.slice(nearStart, lastIndex);
+        if (near.includes("tru") || near.includes("am")) sign = -1;
+        else sign = 1;
       }
     }
 
@@ -894,10 +951,9 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Lấy delta theo đúng số cuối & từ "tru"
     const delta = computeDeltaFromTranscript(raw);
 
-    // Tìm lớp
+    // TÌM LỚP
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
       const nc = normalizeText(c.name);
@@ -913,24 +969,29 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm nhóm
+    // TÌM NHÓM
     let targetGroup: Group | null = null;
-    for (const g of targetClass.groups) {
-      const ng = normalizeText(g.name);
-      const ngNoSpace = ng.replace(/\s+/g, "");
-      if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
-        targetGroup = g;
-        break;
+    const groupNum = extractGroupNumberFromText(text);
+    if (groupNum !== null) {
+      targetGroup = findGroupByNumber(targetClass, groupNum);
+    }
+    if (!targetGroup) {
+      for (const g of targetClass.groups) {
+        const ng = normalizeText(g.name);
+        const ngNoSpace = ng.replace(/\s+/g, "");
+        if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
+          targetGroup = g;
+          break;
+        }
       }
     }
     if (!targetGroup) {
       setVoiceError(
-        'Không xác định được nhóm. Hãy nói rõ: "nhóm 1", "nhóm 2"...',
+        'Không xác định được nhóm. Hãy nói rõ: "nhóm 1", "nhóm 2", "nhóm sáu/nhóm sau"...',
       );
       return;
     }
 
-    // Cập nhật điểm nhóm
     setClasses((prev) =>
       prev.map((c) =>
         c.id === targetClass!.id
@@ -1120,13 +1181,20 @@ function ScoreboardPage({
     rec.start();
   };
 
-  /* ====== HỖ TRỢ TÌM HỌC SINH ====== */
+  /* ====== HỖ TRỢ TÌM HỌC SINH (có ưu tiên nhóm được đọc) ====== */
 
   const findMemberInClass = (raw: string, cls: ClassRoom) => {
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
     const preferredGroupIds = new Set<string>();
+
+    const num = extractGroupNumberFromText(text);
+    if (num !== null) {
+      const g = findGroupByNumber(cls, num);
+      if (g) preferredGroupIds.add(g.id);
+    }
+
     for (const g of cls.groups) {
       const ng = normalizeText(g.name);
       const ngNoSpace = ng.replace(/\s+/g, "");
@@ -1164,10 +1232,8 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Lấy delta dựa trên số cuối cùng + "tru"
     const delta = computeDeltaFromTranscript(raw);
 
-    // Tìm lớp
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
       const nc = normalizeText(c.name);
@@ -1183,7 +1249,6 @@ function ScoreboardPage({
       return;
     }
 
-    // Tìm học sinh
     const hit = findMemberInClass(raw, targetClass);
     if (!hit) {
       setVoiceErrorStudent(
@@ -1192,7 +1257,6 @@ function ScoreboardPage({
       return;
     }
 
-    // Cập nhật điểm HS + nhóm
     setClasses((prev) =>
       prev.map((c) =>
         c.id === targetClass!.id
@@ -1295,7 +1359,7 @@ function ScoreboardPage({
     const newClass: ClassRoom = {
       id: generateId("class"),
       name,
-      groups: createDefaultGroups(), // mặc định 6 nhóm: Nhóm 1–6
+      groups: createDefaultGroups(),
     };
     setClasses((prev) => [...prev, newClass]);
     setActiveClassId(newClass.id);
@@ -1466,7 +1530,6 @@ function ScoreboardPage({
     );
   };
 
-  // + / - cá nhân bằng nút: cập nhật luôn điểm nhóm
   const handleChangeMemberScore = (
     group: Group,
     member: Member,
@@ -1508,7 +1571,6 @@ function ScoreboardPage({
     });
   };
 
-  // Reset toàn bộ điểm cá nhân 1 học sinh (trừ tương ứng khỏi điểm nhóm)
   const handleResetSingleMemberScore = (group: Group, member: Member) => {
     if (member.score === 0) return;
     if (
@@ -1544,7 +1606,6 @@ function ScoreboardPage({
     });
   };
 
-  // Reset cá nhân → trừ tổng điểm cá nhân ra khỏi điểm nhóm
   const handleResetMemberScores = (group: Group) => {
     if (
       !window.confirm(
@@ -1760,7 +1821,7 @@ function ScoreboardPage({
         )}
       </div>
 
-      {/* Lớp đang chọn + nút xoá lớp */}
+      {/* Lớp đang chọn + xoá lớp */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-gray-700">
           Lớp đang chọn:{" "}
@@ -1769,13 +1830,14 @@ function ScoreboardPage({
           </span>
         </h3>
         <button
-          onClick={() => handleRemoveClass(activeClass)}
+          onClick={() => handleRemoveClass(activeClass!)}
           className="text-[11px] px-2 py-1 rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
         >
           Xoá lớp này
         </button>
       </div>
 
+      {/* Nhóm & thành viên */}
       <div className="grid md:grid-cols-2 gap-4">
         {activeClass.groups.map((group) => (
           <div
