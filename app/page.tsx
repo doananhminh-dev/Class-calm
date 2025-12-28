@@ -9,6 +9,22 @@ import {
   SetStateAction,
 } from "react";
 
+import { initializeApp, getApps } from "firebase/app";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  onAuthStateChanged,
+  signOut,
+} from "firebase/auth";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  onSnapshot,
+} from "firebase/firestore";
+
 /* ========== TYPES ========== */
 
 export interface Member {
@@ -86,6 +102,36 @@ function normalizeText(s: string) {
     .trim();
 }
 
+/* ========== FIREBASE (GOOGLE SYNC) ========== */
+
+// ĐIỀN CONFIG FIREBASE Ở ĐÂY
+// Lấy ở Firebase Console → Project settings → Your apps → Web app (</>) → Config
+const firebaseConfig = {
+  apiKey: "AIzaSyDLfKsBT4icup2PMnzLXoV6malGF4NrH7U",
+  authDomain: "class-calm.firebaseapp.com",
+  projectId: "class-calm",
+  storageBucket: "class-calm.firebasestorage.app",
+  messagingSenderId: "420587824198",
+  appId: "1:420587824198:web:d48927168da16d9be11647",
+  measurementId: "G-85SCEN4JVR"
+};
+let fbApp: any = null;
+let fbAuth: any = null;
+let fbDb: any = null;
+let fbProvider: any = null;
+
+function ensureFirebase() {
+  if (fbApp) return;
+  if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
+    console.warn("Firebase chưa cấu hình. Hãy điền firebaseConfig.");
+    return;
+  }
+  fbApp = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+  fbAuth = getAuth(fbApp);
+  fbDb = getFirestore(fbApp);
+  fbProvider = new GoogleAuthProvider();
+}
+
 /* ========== MAIN PAGE ========== */
 
 export default function ClassifyPage() {
@@ -124,7 +170,6 @@ export default function ClassifyPage() {
     });
   }, [currentDb, dbLimit, noiseStarted]);
 
-  // RUNG
   useEffect(() => {
     if (!noiseStarted || !isNoiseExceeded || !alertVibrate) return;
 
@@ -138,7 +183,6 @@ export default function ClassifyPage() {
     }
   }, [isNoiseExceeded, noiseStarted, alertVibrate]);
 
-  // ÂM THANH
   useEffect(() => {
     if (!noiseStarted || !isNoiseExceeded || !alertSound) return;
     if (typeof window === "undefined") return;
@@ -169,12 +213,24 @@ export default function ClassifyPage() {
     lastSoundRef.current = now;
   }, [isNoiseExceeded, noiseStarted, alertSound]);
 
-  /* ====== LỚP + LỊCH SỬ ====== */
+  /* ====== LỚP + LỊCH SỬ + CLOUD SYNC ====== */
 
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [history, setHistory] = useState<PointHistoryEntry[]>([]);
   const [activeClassId, setActiveClassId] = useState<string>("");
 
+  const [user, setUser] = useState<{
+    uid: string;
+    name: string | null;
+    email: string | null;
+  } | null>(null);
+  const [cloudLoading, setCloudLoading] = useState(false);
+
+  // dùng ref để tránh vòng lặp write -> snapshot -> write
+  const cloudLoadedRef = useRef(false);
+  const lastPushedAtRef = useRef<number | null>(null);
+
+  // localStorage init
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -211,6 +267,7 @@ export default function ClassifyPage() {
     }
   }, []);
 
+  // localStorage sync
   useEffect(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem("classify-classes-v3", JSON.stringify(classes));
@@ -225,6 +282,107 @@ export default function ClassifyPage() {
     if (typeof window === "undefined") return;
     localStorage.setItem("classify-dbLimit-v3", dbLimit.toString());
   }, [dbLimit]);
+
+  // Firebase Auth
+  useEffect(() => {
+    ensureFirebase();
+    if (!fbAuth) return;
+    const unsub = onAuthStateChanged(fbAuth, (u) => {
+      if (u) {
+        setUser({
+          uid: u.uid,
+          name: u.displayName,
+          email: u.email,
+        });
+      } else {
+        setUser(null);
+        cloudLoadedRef.current = false;
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const handleSignIn = async () => {
+    try {
+      ensureFirebase();
+      if (!fbAuth || !fbProvider) return;
+      await signInWithPopup(fbAuth, fbProvider);
+    } catch (e) {
+      console.error("Sign-in error", e);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      if (!fbAuth) return;
+      await signOut(fbAuth);
+    } catch (e) {
+      console.error("Sign-out error", e);
+    }
+  };
+
+  // Load từ Cloud khi user đăng nhập
+  useEffect(() => {
+    if (!user) return;
+    ensureFirebase();
+    if (!fbDb) return;
+
+    setCloudLoading(true);
+    const ref = doc(fbDb, "classifyUsers", user.uid);
+    let unsubSnapshot: (() => void) | undefined;
+
+    (async () => {
+      try {
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data: any = snap.data();
+          if (data.classes) setClasses(data.classes);
+          if (data.history) setHistory(data.history);
+        } else {
+          await setDoc(ref, {
+            classes,
+            history,
+            updatedAt: Date.now(),
+          });
+        }
+        cloudLoadedRef.current = true;
+
+        unsubSnapshot = onSnapshot(ref, (snap2) => {
+          if (!snap2.exists()) return;
+          const data2: any = snap2.data();
+          const updatedAt = data2.updatedAt ?? 0;
+          if (
+            lastPushedAtRef.current &&
+            updatedAt === lastPushedAtRef.current
+          ) {
+            // snapshot do chính mình ghi -> bỏ qua
+            return;
+          }
+          if (data2.classes) setClasses(data2.classes);
+          if (data2.history) setHistory(data2.history);
+        });
+      } catch (e) {
+        console.error("Cloud load error", e);
+      } finally {
+        setCloudLoading(false);
+      }
+    })();
+
+    return () => {
+      if (unsubSnapshot) unsubSnapshot();
+    };
+  }, [user?.uid]);
+
+  // Save lên Cloud khi classes/history đổi
+  useEffect(() => {
+    if (!user || !fbDb || !cloudLoadedRef.current) return;
+    const ref = doc(fbDb, "classifyUsers", user.uid);
+    const updatedAt = Date.now();
+    lastPushedAtRef.current = updatedAt;
+    setDoc(ref, { classes, history, updatedAt }, { merge: true }).catch(
+      (e) => console.error("Cloud save error", e),
+    );
+  }, [classes, history, user?.uid]);
 
   const handleLogPoints = (params: {
     classId: string;
@@ -285,6 +443,34 @@ export default function ClassifyPage() {
             </div>
 
             <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end gap-1 mr-2 text-right">
+                {user ? (
+                  <>
+                    <span className="text-xs text-gray-600 max-w-[140px] truncate">
+                      {user.name || user.email}
+                    </span>
+                    <button
+                      onClick={handleSignOut}
+                      className="text-[11px] px-2 py-0.5 rounded-full border border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100"
+                    >
+                      Đăng xuất
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleSignIn}
+                    className="text-[11px] px-3 py-1 rounded-full border border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100"
+                  >
+                    Đăng nhập Google
+                  </button>
+                )}
+                {cloudLoading && (
+                  <span className="text-[10px] text-gray-400">
+                    Đang đồng bộ đám mây...
+                  </span>
+                )}
+              </div>
+
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50/80 border border-purple-200">
                 <div
                   className={`w-2 h-2 rounded-full ${
@@ -539,9 +725,10 @@ function useNoiseMeter() {
       smoothDbRef.current = 0;
     }
 
-    const SMOOTHING = 0.25;
-    const NOISE_GATE = 1;
-    const MAX_STEP = 5;
+    // nhạy hơn version cũ
+    const SMOOTHING = 0.35;
+    const NOISE_GATE = 0.4;
+    const MAX_STEP = 7;
 
     const update = () => {
       if (!sharedAnalyser || !dataArrayRef.current) {
@@ -559,7 +746,7 @@ function useNoiseMeter() {
 
       const rms = Math.sqrt(sum / arr.length);
 
-      let rawDb = rms * 170;
+      let rawDb = rms * 220;
       if (!isFinite(rawDb) || isNaN(rawDb)) rawDb = 0;
       rawDb = Math.min(100, Math.max(0, rawDb));
 
@@ -817,14 +1004,12 @@ function ScoreboardPage({
   const activeClass =
     classes.find((c) => c.id === activeClassId) || classes[0] || null;
 
-  // Voice NHÓM
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
   const [pendingTranscript, setPendingTranscript] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  // Voice HS
   const [listeningStudent, setListeningStudent] = useState(false);
   const [lastTranscriptStudent, setLastTranscriptStudent] = useState("");
   const [pendingTranscriptStudent, setPendingTranscriptStudent] =
@@ -1181,7 +1366,7 @@ function ScoreboardPage({
     rec.start();
   };
 
-  /* ====== HỖ TRỢ TÌM HỌC SINH (có ưu tiên nhóm được đọc) ====== */
+  /* ====== HỖ TRỢ TÌM HỌC SINH ====== */
 
   const findMemberInClass = (raw: string, cls: ClassRoom) => {
     const text = normalizeText(raw);
@@ -1830,7 +2015,7 @@ function ScoreboardPage({
           </span>
         </h3>
         <button
-          onClick={() => handleRemoveClass(activeClass!)}
+          onClick={() => handleRemoveClass(activeClass)}
           className="text-[11px] px-2 py-1 rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
         >
           Xoá lớp này
