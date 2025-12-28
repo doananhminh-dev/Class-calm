@@ -104,8 +104,6 @@ function normalizeText(s: string) {
 
 /* ========== FIREBASE (GOOGLE SYNC) ========== */
 
-// ĐIỀN CONFIG FIREBASE Ở ĐÂY
-// Lấy ở Firebase Console → Project settings → Your apps → Web app (</>) → Config
 const firebaseConfig = {
   apiKey: "AIzaSyDLfKsBT4icup2PMnzLXoV6malGF4NrH7U",
   authDomain: "class-calm.firebaseapp.com",
@@ -113,8 +111,9 @@ const firebaseConfig = {
   storageBucket: "class-calm.firebasestorage.app",
   messagingSenderId: "420587824198",
   appId: "1:420587824198:web:d48927168da16d9be11647",
-  measurementId: "G-85SCEN4JVR"
+  measurementId: "G-85SCEN4JVR",
 };
+
 let fbApp: any = null;
 let fbAuth: any = null;
 let fbDb: any = null;
@@ -122,10 +121,6 @@ let fbProvider: any = null;
 
 function ensureFirebase() {
   if (fbApp) return;
-  if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY") {
-    console.warn("Firebase chưa cấu hình. Hãy điền firebaseConfig.");
-    return;
-  }
   fbApp = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
   fbAuth = getAuth(fbApp);
   fbDb = getFirestore(fbApp);
@@ -226,11 +221,9 @@ export default function ClassifyPage() {
   } | null>(null);
   const [cloudLoading, setCloudLoading] = useState(false);
 
-  // dùng ref để tránh vòng lặp write -> snapshot -> write
   const cloudLoadedRef = useRef(false);
   const lastPushedAtRef = useRef<number | null>(null);
 
-  // localStorage init
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -267,7 +260,6 @@ export default function ClassifyPage() {
     }
   }, []);
 
-  // localStorage sync
   useEffect(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem("classify-classes-v3", JSON.stringify(classes));
@@ -355,7 +347,6 @@ export default function ClassifyPage() {
             lastPushedAtRef.current &&
             updatedAt === lastPushedAtRef.current
           ) {
-            // snapshot do chính mình ghi -> bỏ qua
             return;
           }
           if (data2.classes) setClasses(data2.classes);
@@ -433,7 +424,7 @@ export default function ClassifyPage() {
       <header className="glass-card sticky top-0 z-50 border-b border-purple-100/50 bg-white/80 backdrop-blur-xl">
         <div className="container mx-auto px-6">
           <div className="flex items-center justify-between py-4 border-b border-purple-100/40">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center_gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center shadow-lg shadow-purple-500/40">
                 <span className="text-white font-bold text-lg">C</span>
               </div>
@@ -521,6 +512,23 @@ export default function ClassifyPage() {
       </header>
 
       <main className="container mx-auto px-6 py-8 relative z-10">
+        {/* Ô login to dễ thấy */}
+        {!user && (
+          <div className="mb-5 max-w-3xl mx-auto p-3 md:p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-xs md:text-sm text-amber-800">
+            <span>
+              Bạn chưa đăng nhập Google. Đăng nhập để{" "}
+              <b>lưu và đồng bộ điểm</b> giữa điện thoại, laptop và các thiết
+              bị khác.
+            </span>
+            <button
+              onClick={handleSignIn}
+              className="self-start md:self-auto px-3 py-1.5 rounded-full bg-amber-500 text-white text-xs md:text-sm font-semibold hover:bg-amber-600"
+            >
+              Đăng nhập Google
+            </button>
+          </div>
+        )}
+
         {activeTab === "sound" && (
           <div className="max-w-4xl mx-auto">
             <NoiseMonitorWithControls
@@ -539,6 +547,7 @@ export default function ClassifyPage() {
           </div>
         )}
 
+        {/* Phần còn lại (scoreboard, history, leaderboard, ai) sẽ nằm ở phần 2/3 & 3/3 */}
         {activeTab === "scoreboard" && (
           <ScoreboardPage
             classes={classes}
@@ -725,7 +734,6 @@ function useNoiseMeter() {
       smoothDbRef.current = 0;
     }
 
-    // nhạy hơn version cũ
     const SMOOTHING = 0.35;
     const NOISE_GATE = 0.4;
     const MAX_STEP = 7;
@@ -1004,12 +1012,14 @@ function ScoreboardPage({
   const activeClass =
     classes.find((c) => c.id === activeClassId) || classes[0] || null;
 
+  // Voice NHÓM
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
   const [pendingTranscript, setPendingTranscript] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef<any>(null);
 
+  // Voice HS
   const [listeningStudent, setListeningStudent] = useState(false);
   const [lastTranscriptStudent, setLastTranscriptStudent] = useState("");
   const [pendingTranscriptStudent, setPendingTranscriptStudent] =
@@ -1017,7 +1027,7 @@ function ScoreboardPage({
   const [voiceErrorStudent, setVoiceErrorStudent] = useState("");
   const recognitionStudentRef = useRef<any>(null);
 
-  /* ====== HELPER: SỐ, NHÓM, ĐIỂM ====== */
+  /* ====== HÀM CHUNG: SỐ, NHÓM, ĐIỂM ====== */
 
   const wordToNumber: Record<string, number> = {
     mot: 1,
@@ -2289,7 +2299,6 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
     </div>
   );
 }
-
 /* ========== BẢNG XẾP HẠNG ========== */
 
 interface LeaderboardPageProps {
