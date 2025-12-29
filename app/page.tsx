@@ -219,6 +219,10 @@ export default function ClassifyPage() {
     name: string | null;
     email: string | null;
   } | null>(null);
+
+  // Thêm state để biết đã check xong trạng thái đăng nhập hay chưa
+  const [authReady, setAuthReady] = useState(false);
+
   const [cloudLoading, setCloudLoading] = useState(false);
 
   const cloudLoadedRef = useRef(false);
@@ -290,6 +294,8 @@ export default function ClassifyPage() {
         setUser(null);
         cloudLoadedRef.current = false;
       }
+      // Đánh dấu là đã kiểm tra xong trạng thái đăng nhập
+      setAuthReady(true);
     });
     return () => unsub();
   }, []);
@@ -417,6 +423,29 @@ export default function ClassifyPage() {
     { id: "ai" as const, label: "Trợ Lý AI" },
   ];
 
+  /* ====== GIAI ĐOẠN AUTH: LOADING & LOGIN SCREEN ====== */
+
+  if (!authReady) {
+    // Đang kiểm tra trạng thái đăng nhập
+    return (
+      <div className="relative min-h-screen bg-gradient-to-br from-purple-50 via-white to-violet-50 overflow-hidden flex items-center justify-center">
+        <BackgroundThreads />
+        <div className="glass-card rounded-2xl px-4 py-3 bg-white/90 border border-purple-100 shadow-lg shadow-purple-100/60">
+          <p className="text-sm text-gray-600">
+            Đang tải dữ liệu và kiểm tra đăng nhập...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    // Chưa đăng nhập: hiện màn hình login riêng
+    return <LoginScreen onSignIn={handleSignIn} />;
+  }
+
+  /* ====== GIAO DIỆN CHÍNH KHI ĐÃ ĐĂNG NHẬP ====== */
+
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-purple-50 via-white to-violet-50 overflow-hidden">
       <BackgroundThreads />
@@ -512,7 +541,7 @@ export default function ClassifyPage() {
       </header>
 
       <main className="container mx-auto px-6 py-8 relative z-10">
-        {/* Ô login to dễ thấy */}
+        {/* Ô login to dễ thấy - giờ user luôn có, nên đoạn này sẽ không hiển thị, nhưng giữ nguyên để không ảnh hưởng cấu trúc */}
         {!user && (
           <div className="mb-5 max-w-3xl mx-auto p-3 md:p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-xs md:text-sm text-amber-800">
             <span>
@@ -547,7 +576,6 @@ export default function ClassifyPage() {
           </div>
         )}
 
-        {/* Phần còn lại (scoreboard, history, leaderboard, ai) sẽ nằm ở phần 2/3 & 3/3 */}
         {activeTab === "scoreboard" && (
           <ScoreboardPage
             classes={classes}
@@ -945,7 +973,7 @@ function NoiseMonitorWithControls({
             <li>Giảm ngưỡng để lớp yên tĩnh hơn.</li>
             <li>
               Khi mức ồn vượt quá ngưỡng, trạng thái sẽ chuyển sang{" "}
-              <span className="font-medium text-red-600">Vượt ngưỡng</span> và
+                <span className="font-medium text-red-600">Vượt ngưỡng</span> và
               nếu bật cảnh báo, máy sẽ rung hoặc phát âm thanh.
             </li>
           </ul>
@@ -1071,7 +1099,10 @@ function ScoreboardPage({
     return null;
   };
 
-  const findGroupByNumber = (cls: ClassRoom, groupNumber: number): Group | null => {
+  const findGroupByNumber = (
+    cls: ClassRoom,
+    groupNumber: number,
+  ): Group | null => {
     if (groupNumber <= 0) return null;
 
     for (const g of cls.groups) {
@@ -1085,11 +1116,59 @@ function ScoreboardPage({
     return null;
   };
 
+  /**
+   * TÍNH SỐ ĐIỂM + DẤU (+/-) TỪ CÂU NÓI
+   * ĐÃ FIX:
+   *  - "-1", "- 1"  => trừ 1
+   *  - "tru1", "trừ1", "tru 1", "trừ 1" => trừ 1
+   *  - Các số khác tương tự.
+   */
   const computeDeltaFromTranscript = (raw: string): number => {
     const norm = normalizeText(raw);
 
-    const digitRegex = /\d+/g;
+    let best:
+      | {
+          sign: 1 | -1;
+          amount: number;
+          index: number;
+        }
+      | null = null;
+
+    const trySetBest = (sign: 1 | -1, amount: number, index: number) => {
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      if (!best || index >= best.index) {
+        best = { sign, amount, index };
+      }
+    };
+
+    // 1) Mẫu: "-1", "- 1", "+2", "+ 5"
+    const symbolRegex = /([+-])\s*(\d+)/g;
     let m: RegExpExecArray | null;
+    while ((m = symbolRegex.exec(norm)) !== null) {
+      const signChar = m[1];
+      const digits = m[2];
+      const amount = parseInt(digits, 10);
+      const sign: 1 | -1 = signChar === "-" ? -1 : 1;
+      trySetBest(sign, amount, m.index);
+    }
+
+    // 2) Mẫu: "tru1", "tru 1", "am1", "am 1" (từ "trừ"/"âm")
+    const wordMinusRegex = /(tru|am)\s*(\d+)/g;
+    while ((m = wordMinusRegex.exec(norm)) !== null) {
+      const digits = m[2];
+      const amount = parseInt(digits, 10);
+      // luôn là dấu trừ
+      trySetBest(-1, amount, m.index);
+    }
+
+    // Nếu tìm được mẫu chuẩn ở trên thì ưu tiên dùng luôn
+    if (best) {
+      return best.sign * best.amount;
+    }
+
+    // ===== Fallback: logic cũ (đã có sẵn) =====
+
+    const digitRegex = /\d+/g;
     let lastDigits: string | null = null;
     let lastIndex = -1;
 
@@ -1102,6 +1181,7 @@ function ScoreboardPage({
     let amount = 1;
 
     if (!lastDigits) {
+      // Không có số => nếu có "tru"/"am" thì trừ 1, ngược lại cộng 1
       if (norm.includes("tru") || norm.includes("am")) sign = -1;
       else sign = 1;
       amount = 1;
@@ -1109,6 +1189,7 @@ function ScoreboardPage({
       amount = parseInt(lastDigits, 10);
       if (!Number.isFinite(amount) || amount <= 0) amount = 1;
 
+      // Kiểm tra ký tự +/- ngay trước số
       let explicit: 1 | -1 | 0 = 0;
       let i = lastIndex - 1;
       while (i >= 0 && /\s/.test(norm[i])) i--;
@@ -1125,6 +1206,7 @@ function ScoreboardPage({
       if (explicit !== 0) {
         sign = explicit as 1 | -1;
       } else {
+        // Không có dấu rõ ràng, soi vùng gần trước số xem có "tru"/"am" không
         const nearStart = Math.max(0, lastIndex - 15);
         const near = norm.slice(nearStart, lastIndex);
         if (near.includes("tru") || near.includes("am")) sign = -1;
@@ -2821,6 +2903,76 @@ function AssistantChat() {
         >
           Gửi
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ========== LOGIN SCREEN ========== */
+
+function LoginScreen({
+  onSignIn,
+}: {
+  onSignIn: () => Promise<void> | void;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async () => {
+    try {
+      setLoading(true);
+      await onSignIn();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 via-indigo-600 to-sky-500 text-gray-900 overflow-hidden">
+      <div className="absolute inset-0 opacity-35 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.7),_transparent_55%)]" />
+      <div className="relative z-10 max-w-md w-full mx-4">
+        <div className="glass-card rounded-3xl bg-white/90 border border-white/60 shadow-2xl px-6 py-7 md:px-8 md:py-9">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center shadow-lg shadow-purple-500/40">
+              <span className="text-white font-bold text-xl">C</span>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-purple-800">
+                Class-calm
+              </h1>
+              <p className="text-xs text-gray-500">
+                Quản lý điểm số &amp; độ ồn lớp học
+              </p>
+            </div>
+          </div>
+
+          <p className="text-sm text-gray-700 mb-4">
+            Đăng nhập để lưu và đồng bộ toàn bộ dữ liệu lớp học trên mọi thiết
+            bị (điện thoại, máy tính, tablet).
+          </p>
+
+          <ul className="text-xs text-gray-600 space-y-1.5 mb-6 list-disc list-inside">
+            <li>Lưu lớp, nhóm, học sinh và điểm số lên Firebase (Google).</li>
+            <li>Tự động khôi phục khi đổi máy hoặc đăng nhập lại.</li>
+            <li>Sử dụng tài khoản Google của thầy/cô, miễn phí.</li>
+          </ul>
+
+          <button
+            type="button"
+            onClick={handleClick}
+            disabled={loading}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2.5 shadow-lg shadow-purple-500/40 disabled:opacity-70"
+          >
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white text-[11px] font-bold text-purple-600">
+              G
+            </span>
+            {loading ? "Đang đăng nhập..." : "Đăng nhập với Google"}
+          </button>
+
+          <p className="mt-3 text-[11px] text-gray-400 text-center">
+            Dữ liệu lớp học của bạn được lưu riêng tư trong tài khoản Firebase
+            (Google Cloud) của chính bạn.
+          </p>
+        </div>
       </div>
     </div>
   );
