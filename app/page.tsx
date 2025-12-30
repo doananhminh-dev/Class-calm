@@ -139,6 +139,7 @@ export default function ClassifyPage() {
   const [dbLimit, setDbLimit] = useState(60);
   const {
     db: currentDb,
+    maxDb,
     start: startNoiseMeter,
     stop: stopNoiseMeter,
     started: noiseStarted,
@@ -562,6 +563,7 @@ export default function ClassifyPage() {
           <div className="max-w-4xl mx-auto">
             <NoiseMonitorWithControls
               db={currentDb}
+              maxDb={maxDb}
               dbLimit={dbLimit}
               setDbLimit={setDbLimit}
               started={noiseStarted}
@@ -715,6 +717,7 @@ let sharedStream: MediaStream | null = null;
 
 function useNoiseMeter() {
   const [db, setDb] = useState(0);
+  const [maxDb, setMaxDb] = useState(0);
   const [started, setStarted] = useState(false);
 
   const dataArrayRef = useRef<Float32Array | null>(null);
@@ -741,6 +744,8 @@ function useNoiseMeter() {
   const start = async () => {
     if (started) return;
     setStarted(true);
+    // Reset max mỗi lần bắt đầu đo
+    setMaxDb(0);
 
     if (!sharedAudioContext || !sharedAnalyser) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -795,7 +800,9 @@ function useNoiseMeter() {
       if (target < prev - MAX_STEP) target = prev - MAX_STEP;
 
       smoothDbRef.current = target;
-      setDb(Math.round(target));
+      const rounded = Math.round(target);
+      setDb(rounded);
+      setMaxDb((prevMax) => (rounded > prevMax ? rounded : prevMax));
 
       sharedRAF = requestAnimationFrame(update);
     };
@@ -820,16 +827,17 @@ function useNoiseMeter() {
       sharedAudioContext = null;
       sharedAnalyser = null;
     }
-    setDb(0);
+    setDb(0); // Giữ lại maxDb để hiển thị sau khi dừng
   };
 
-  return { db, start, stop, started };
+  return { db, maxDb, start, stop, started };
 }
 
 /* ========== NOISE MONITOR UI ========== */
 
 interface NoiseMonitorProps {
   db: number;
+  maxDb: number;
   dbLimit: number;
   setDbLimit: (value: number) => void;
   started: boolean;
@@ -844,6 +852,7 @@ interface NoiseMonitorProps {
 
 function NoiseMonitorWithControls({
   db,
+  maxDb,
   dbLimit,
   setDbLimit,
   started,
@@ -872,6 +881,8 @@ function NoiseMonitorWithControls({
     if (!started) start();
     else stop();
   };
+
+  const showMax = !started && maxDb > 0;
 
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg-white/90 border border-purple-100 shadow-xl shadow-purple-100/60">
@@ -973,7 +984,7 @@ function NoiseMonitorWithControls({
             <li>Giảm ngưỡng để lớp yên tĩnh hơn.</li>
             <li>
               Khi mức ồn vượt quá ngưỡng, trạng thái sẽ chuyển sang{" "}
-                <span className="font-medium text-red-600">Vượt ngưỡng</span> và
+              <span className="font-medium text-red-600">Vượt ngưỡng</span> và
               nếu bật cảnh báo, máy sẽ rung hoặc phát âm thanh.
             </li>
           </ul>
@@ -1009,6 +1020,13 @@ function NoiseMonitorWithControls({
           </div>
         </div>
       </div>
+
+      {showMax && (
+        <p className="text-xs text-gray-600 mt-2">
+          Chỉ số db cao nhất vừa đo được là:{" "}
+          <span className="font-semibold text-purple-700">{maxDb}</span> dB
+        </p>
+      )}
     </div>
   );
 }
@@ -1301,8 +1319,95 @@ function ScoreboardPage({
     setVoiceError("");
   };
 
+  /* ====== BONUS: LỆNH CHO NHÓM NGAY LỚP HIỆN TẠI (KHÔNG CẦN ĐỌC TÊN LỚP) ====== */
+
+  const applyGroupCommandInActiveClass = (raw: string) => {
+    if (!activeClass) {
+      setVoiceError("Hãy chọn một lớp trước khi cộng/trừ điểm nhóm.");
+      return;
+    }
+
+    const text = normalizeText(raw);
+    const textNoSpace = text.replace(/\s+/g, "");
+    const delta = computeDeltaFromTranscript(raw);
+
+    // TÌM NHÓM TRONG LỚP ĐANG CHỌN
+    let targetGroup: Group | null = null;
+    const groupNum = extractGroupNumberFromText(text);
+    if (groupNum !== null) {
+      targetGroup = findGroupByNumber(activeClass, groupNum);
+    }
+    if (!targetGroup) {
+      for (const g of activeClass.groups) {
+        const ng = normalizeText(g.name);
+        const ngNoSpace = ng.replace(/\s+/g, "");
+        if (text.includes(ng) || textNoSpace.includes(ngNoSpace)) {
+          targetGroup = g;
+          break;
+        }
+      }
+    }
+    if (!targetGroup) {
+      setVoiceError(
+        'Không xác định được nhóm trong lớp hiện tại. Hãy nói rõ: "nhóm 1", "nhóm 2"...',
+      );
+      return;
+    }
+
+    setClasses((prev) =>
+      prev.map((c) =>
+        c.id === activeClass.id
+          ? {
+              ...c,
+              groups: c.groups.map((g) =>
+                g.id === targetGroup!.id
+                  ? { ...g, score: g.score + delta }
+                  : g,
+              ),
+            }
+          : c,
+      ),
+    );
+
+    onLog({
+      classId: activeClass.id,
+      groupId: targetGroup.id,
+      memberId: null,
+      change: delta,
+      reason: `Giọng nói (lớp hiện tại): "${raw}"`,
+      type: "group",
+    });
+
+    setLastTranscript(raw);
+    setVoiceError("");
+  };
+
   const handleTranscriptWithAI = async (raw: string) => {
     setVoiceError("");
+
+    const text = normalizeText(raw);
+    const textNoSpace = text.replace(/\s+/g, "");
+
+    // Kiểm tra xem câu chỉ nói nhóm + hành động, KHÔNG nhắc tên lớp
+    let hasClassName = false;
+    for (const c of classes) {
+      const nc = normalizeText(c.name);
+      const ncNoSpace = nc.replace(/\s+/g, "");
+      if (text.includes(nc) || textNoSpace.includes(ncNoSpace)) {
+        hasClassName = true;
+        break;
+      }
+    }
+
+    const hasGroupWord = text.includes("nhom");
+    const hasActionWord =
+      text.includes("cong") || text.includes("tru") || text.includes("am");
+
+    if (!hasClassName && hasGroupWord && hasActionWord) {
+      // BONUS: xử lý ngay trong lớp đang chọn, không cần đọc tên lớp
+      applyGroupCommandInActiveClass(raw);
+      return;
+    }
 
     const classesForAi = classes.map((c) => ({
       name: c.name,
@@ -1969,8 +2074,8 @@ function ScoreboardPage({
             Giọng nói nhóm:
             <br />
             <span className="text-[11px] text-gray-500">
-              Ví dụ: &quot;lớp 6A2 nhóm 1 cộng 5 điểm&quot; hoặc &quot;7A2 nhóm 2 trừ 2
-              điểm&quot;.
+              Ví dụ: &quot;lớp 6A2 nhóm 1 cộng 5 điểm&quot; hoặc &quot;Cộng 5 điểm cho nhóm
+              1&quot; (tại lớp đang chọn).
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
