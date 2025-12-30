@@ -909,6 +909,7 @@ function NoiseMonitorWithControls({
       </div>
 
       <div className="grid md:grid-cols-[2fr,1.7fr] gap-6">
+        {/* Khung đo */}
         <div className="rounded-2xl bg-purple-50/80 border border-purple-100 p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm text-gray-600">Mức ồn hiện tại</span>
@@ -949,6 +950,7 @@ function NoiseMonitorWithControls({
           </div>
         </div>
 
+        {/* Khung chỉnh limit */}
         <div className="rounded-2xl bg-white/80 border border-purple-100 p-4 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-600">Ngưỡng âm thanh (dB)</span>
@@ -1019,18 +1021,20 @@ function NoiseMonitorWithControls({
             </p>
           </div>
         </div>
-      </div>
 
-      {showMax && (
-        <p className="text-xs text-gray-600 mt-2">
-          Chỉ số db cao nhất vừa đo được là:{" "}
-          <span className="font-semibold text-purple-700">{maxDb}</span> dB
-        </p>
-      )}
+        {/* Thông báo DB cao nhất */}
+        {showMax && (
+          <div className="md:col-span-2 rounded-xl bg-purple-50/70 border border-purple-100 px-3 py-2 text-xs text-gray-700 flex justify-center">
+            <span>
+              Chỉ số db cao nhất vừa đo được là:{" "}
+              <span className="font-semibold text-purple-700">{maxDb}</span> dB
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
 /* ========== SCOREBOARD (NHÓM + HS) ========== */
 
 interface ScoreboardProps {
