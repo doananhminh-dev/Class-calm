@@ -882,7 +882,13 @@ function NoiseMonitorWithControls({
     else stop();
   };
 
-  const showMax = !started && maxDb > 0;
+  // Nội dung dòng mô tả max dB – luôn hiển thị
+  const maxLabel =
+    maxDb > 0
+      ? `Chỉ số db cao nhất vừa đo được là: ${maxDb} dB`
+      : started
+      ? "Hệ thống đang đo, chỉ số db cao nhất sẽ cập nhật tại đây."
+      : "Nhấn “Bắt đầu đo” để ghi nhận chỉ số db cao nhất trong lớp.";
 
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg-white/90 border border-purple-100 shadow-xl shadow-purple-100/60">
@@ -1022,15 +1028,12 @@ function NoiseMonitorWithControls({
           </div>
         </div>
 
-        {/* Thông báo DB cao nhất */}
-        {showMax && (
-          <div className="md:col-span-2 rounded-xl bg-purple-50/70 border border-purple-100 px-3 py-2 text-xs text-gray-700 flex justify-center">
-            <span>
-              Chỉ số db cao nhất vừa đo được là:{" "}
-              <span className="font-semibold text-purple-700">{maxDb}</span> dB
-            </span>
-          </div>
-        )}
+        {/* Dòng db cao nhất – luôn hiện, nằm giữa hai khung (span 2 cột) */}
+        <div className="md:col-span-2 rounded-xl bg-purple-50/70 border border-purple-100 px-3 py-2 text-xs text-gray-700 flex justify-center">
+          <span>
+            {maxLabel}
+          </span>
+        </div>
       </div>
     </div>
   );
