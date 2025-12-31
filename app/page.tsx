@@ -136,7 +136,7 @@ export default function ClassifyPage() {
     );
 
   /* ====== ÂM THANH + RUNG ====== */
-  const [dbLimit, setDbLimit] = useState(60);
+  const [dbLimit, setDbLimit] = useState(40); // mặc định 40
   const {
     db: currentDb,
     maxDb,
@@ -145,8 +145,8 @@ export default function ClassifyPage() {
     started: noiseStarted,
   } = useNoiseMeter();
   const [isNoiseExceeded, setIsNoiseExceeded] = useState(false);
-  const [isMicActive, setIsMicActive] = useState(false);
 
+  const [isMicActive, setIsMicActive] = useState(false);
   const lastVibrateRef = useRef<number>(0);
   const lastSoundRef = useRef<number>(0);
   const [alertVibrate, setAlertVibrate] = useState(true);
@@ -221,9 +221,7 @@ export default function ClassifyPage() {
     email: string | null;
   } | null>(null);
 
-  // Thêm state để biết đã check xong trạng thái đăng nhập hay chưa
   const [authReady, setAuthReady] = useState(false);
-
   const [cloudLoading, setCloudLoading] = useState(false);
 
   const cloudLoadedRef = useRef(false);
@@ -295,7 +293,6 @@ export default function ClassifyPage() {
         setUser(null);
         cloudLoadedRef.current = false;
       }
-      // Đánh dấu là đã kiểm tra xong trạng thái đăng nhập
       setAuthReady(true);
     });
     return () => unsub();
@@ -424,10 +421,7 @@ export default function ClassifyPage() {
     { id: "ai" as const, label: "Trợ Lý AI" },
   ];
 
-  /* ====== GIAI ĐOẠN AUTH: LOADING & LOGIN SCREEN ====== */
-
   if (!authReady) {
-    // Đang kiểm tra trạng thái đăng nhập
     return (
       <div className="relative min-h-screen bg-gradient-to-br from-purple-50 via-white to-violet-50 overflow-hidden flex items-center justify-center">
         <BackgroundThreads />
@@ -441,11 +435,8 @@ export default function ClassifyPage() {
   }
 
   if (!user) {
-    // Chưa đăng nhập: hiện màn hình login riêng
     return <LoginScreen onSignIn={handleSignIn} />;
   }
-
-  /* ====== GIAO DIỆN CHÍNH KHI ĐÃ ĐĂNG NHẬP ====== */
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-purple-50 via-white to-violet-50 overflow-hidden">
@@ -495,11 +486,11 @@ export default function ClassifyPage() {
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50/80 border border-purple-200">
                 <div
                   className={`w-2 h-2 rounded-full ${
-                    isMicActive ? "bg-purple-600 animate-pulse" : "bg-gray-400"
+                    noiseStarted ? "bg-purple-600 animate-pulse" : "bg-gray-400"
                   }`}
                 />
                 <span className="text-sm text-gray-600">
-                  {isMicActive ? "Mic Đang Bật" : "Mic Tắt"}
+                  {noiseStarted ? "Mic Đang Bật" : "Mic Tắt"}
                 </span>
               </div>
               <div
@@ -542,23 +533,6 @@ export default function ClassifyPage() {
       </header>
 
       <main className="container mx-auto px-6 py-8 relative z-10">
-        {/* Ô login to dễ thấy - giờ user luôn có, nên đoạn này sẽ không hiển thị, nhưng giữ nguyên để không ảnh hưởng cấu trúc */}
-        {!user && (
-          <div className="mb-5 max-w-3xl mx-auto p-3 md:p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-xs md:text-sm text-amber-800">
-            <span>
-              Bạn chưa đăng nhập Google. Đăng nhập để{" "}
-              <b>lưu và đồng bộ điểm</b> giữa điện thoại, laptop và các thiết
-              bị khác.
-            </span>
-            <button
-              onClick={handleSignIn}
-              className="self-start md:self-auto px-3 py-1.5 rounded-full bg-amber-500 text-white text-xs md:text-sm font-semibold hover:bg-amber-600"
-            >
-              Đăng nhập Google
-            </button>
-          </div>
-        )}
-
         {activeTab === "sound" && (
           <div className="max-w-4xl mx-auto">
             <NoiseMonitorWithControls
@@ -722,6 +696,7 @@ function useNoiseMeter() {
 
   const dataArrayRef = useRef<Float32Array | null>(null);
   const smoothDbRef = useRef(0);
+  const lastUiUpdateRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -744,7 +719,6 @@ function useNoiseMeter() {
   const start = async () => {
     if (started) return;
     setStarted(true);
-    // Reset max mỗi lần bắt đầu đo
     setMaxDb(0);
 
     if (!sharedAudioContext || !sharedAnalyser) {
@@ -765,6 +739,7 @@ function useNoiseMeter() {
 
       dataArrayRef.current = new Float32Array(analyser.fftSize);
       smoothDbRef.current = 0;
+      lastUiUpdateRef.current = 0;
     }
 
     const SMOOTHING = 0.35;
@@ -801,8 +776,14 @@ function useNoiseMeter() {
 
       smoothDbRef.current = target;
       const rounded = Math.round(target);
-      setDb(rounded);
-      setMaxDb((prevMax) => (rounded > prevMax ? rounded : prevMax));
+
+      const now =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      if (now - lastUiUpdateRef.current >= 500) {
+        setDb(rounded);
+        setMaxDb((prevMax) => (rounded > prevMax ? rounded : prevMax));
+        lastUiUpdateRef.current = now;
+      }
 
       sharedRAF = requestAnimationFrame(update);
     };
@@ -827,7 +808,7 @@ function useNoiseMeter() {
       sharedAudioContext = null;
       sharedAnalyser = null;
     }
-    setDb(0); // Giữ lại maxDb để hiển thị sau khi dừng
+    setDb(0); // giữ maxDb để hiển thị sau khi dừng
   };
 
   return { db, maxDb, start, stop, started };
@@ -881,14 +862,6 @@ function NoiseMonitorWithControls({
     if (!started) start();
     else stop();
   };
-
-  // Nội dung dòng mô tả max dB – luôn hiển thị
-  const maxLabel =
-    maxDb > 0
-      ? `Chỉ số db cao nhất vừa đo được là: ${maxDb} dB`
-      : started
-      ? "Hệ thống đang đo, chỉ số db cao nhất sẽ cập nhật tại đây."
-      : "Nhấn “Bắt đầu đo” để ghi nhận chỉ số db cao nhất trong lớp.";
 
   return (
     <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-6 bg-white/90 border border-purple-100 shadow-xl shadow-purple-100/60">
@@ -1028,16 +1001,29 @@ function NoiseMonitorWithControls({
           </div>
         </div>
 
-        {/* Dòng db cao nhất – luôn hiện, nằm giữa hai khung (span 2 cột) */}
-        <div className="md:col-span-2 rounded-xl bg-purple-50/70 border border-purple-100 px-3 py-2 text-xs text-gray-700 flex justify-center">
-          <span>
-            {maxLabel}
+        {/* Thanh db cao nhất – to hơn, luôn hiện ở giữa hai khung */}
+        <div className="md:col-span-2 rounded-xl bg-purple-50/80 border border-purple-100 px-4 py-3 flex justify-center">
+          <span className="text-xs md:text-sm text-gray-700 text-center">
+            {maxDb > 0 ? (
+              <>
+                Chỉ số db cao nhất vừa đo được là:{" "}
+                <span className="text-base md:text-lg font-semibold text-purple-700">
+                  {maxDb}
+                </span>{" "}
+                dB
+              </>
+            ) : started ? (
+              "Hệ thống đang đo, chỉ số db cao nhất sẽ cập nhật tại đây."
+            ) : (
+              "Nhấn “Bắt đầu đo” để ghi nhận chỉ số db cao nhất trong lớp."
+            )}
           </span>
         </div>
       </div>
     </div>
   );
 }
+
 /* ========== SCOREBOARD (NHÓM + HS) ========== */
 
 interface ScoreboardProps {
@@ -1141,13 +1127,6 @@ function ScoreboardPage({
     return null;
   };
 
-  /**
-   * TÍNH SỐ ĐIỂM + DẤU (+/-) TỪ CÂU NÓI
-   * ĐÃ FIX:
-   *  - "-1", "- 1"  => trừ 1
-   *  - "tru1", "trừ1", "tru 1", "trừ 1" => trừ 1
-   *  - Các số khác tương tự.
-   */
   const computeDeltaFromTranscript = (raw: string): number => {
     const norm = normalizeText(raw);
 
@@ -1166,7 +1145,7 @@ function ScoreboardPage({
       }
     };
 
-    // 1) Mẫu: "-1", "- 1", "+2", "+ 5"
+    // 1) "-1", "- 1", "+2", "+ 5"
     const symbolRegex = /([+-])\s*(\d+)/g;
     let m: RegExpExecArray | null;
     while ((m = symbolRegex.exec(norm)) !== null) {
@@ -1177,22 +1156,19 @@ function ScoreboardPage({
       trySetBest(sign, amount, m.index);
     }
 
-    // 2) Mẫu: "tru1", "tru 1", "am1", "am 1" (từ "trừ"/"âm")
+    // 2) "tru1", "tru 1", "am1", "am 1"
     const wordMinusRegex = /(tru|am)\s*(\d+)/g;
     while ((m = wordMinusRegex.exec(norm)) !== null) {
       const digits = m[2];
       const amount = parseInt(digits, 10);
-      // luôn là dấu trừ
       trySetBest(-1, amount, m.index);
     }
 
-    // Nếu tìm được mẫu chuẩn ở trên thì ưu tiên dùng luôn
     if (best) {
       return best.sign * best.amount;
     }
 
-    // ===== Fallback: logic cũ (đã có sẵn) =====
-
+    // fallback cũ
     const digitRegex = /\d+/g;
     let lastDigits: string | null = null;
     let lastIndex = -1;
@@ -1206,7 +1182,6 @@ function ScoreboardPage({
     let amount = 1;
 
     if (!lastDigits) {
-      // Không có số => nếu có "tru"/"am" thì trừ 1, ngược lại cộng 1
       if (norm.includes("tru") || norm.includes("am")) sign = -1;
       else sign = 1;
       amount = 1;
@@ -1214,7 +1189,6 @@ function ScoreboardPage({
       amount = parseInt(lastDigits, 10);
       if (!Number.isFinite(amount) || amount <= 0) amount = 1;
 
-      // Kiểm tra ký tự +/- ngay trước số
       let explicit: 1 | -1 | 0 = 0;
       let i = lastIndex - 1;
       while (i >= 0 && /\s/.test(norm[i])) i--;
@@ -1231,7 +1205,6 @@ function ScoreboardPage({
       if (explicit !== 0) {
         sign = explicit as 1 | -1;
       } else {
-        // Không có dấu rõ ràng, soi vùng gần trước số xem có "tru"/"am" không
         const nearStart = Math.max(0, lastIndex - 15);
         const near = norm.slice(nearStart, lastIndex);
         if (near.includes("tru") || near.includes("am")) sign = -1;
@@ -1242,7 +1215,7 @@ function ScoreboardPage({
     return sign * amount;
   };
 
-  /* ====== PARSER NHÓM (fallback khi AI fail) ====== */
+  /* ====== FALLBACK NHÓM ====== */
 
   const fallbackLocalParse = (raw: string) => {
     if (!classes.length) {
@@ -1326,7 +1299,7 @@ function ScoreboardPage({
     setVoiceError("");
   };
 
-  /* ====== BONUS: LỆNH CHO NHÓM NGAY LỚP HIỆN TẠI (KHÔNG CẦN ĐỌC TÊN LỚP) ====== */
+  /* ====== BONUS: LỆNH NHÓM CHO LỚP ĐANG CHỌN ====== */
 
   const applyGroupCommandInActiveClass = (raw: string) => {
     if (!activeClass) {
@@ -1338,7 +1311,6 @@ function ScoreboardPage({
     const textNoSpace = text.replace(/\s+/g, "");
     const delta = computeDeltaFromTranscript(raw);
 
-    // TÌM NHÓM TRONG LỚP ĐANG CHỌN
     let targetGroup: Group | null = null;
     const groupNum = extractGroupNumberFromText(text);
     if (groupNum !== null) {
@@ -1395,7 +1367,7 @@ function ScoreboardPage({
     const text = normalizeText(raw);
     const textNoSpace = text.replace(/\s+/g, "");
 
-    // Kiểm tra xem câu chỉ nói nhóm + hành động, KHÔNG nhắc tên lớp
+    // Nếu không nói tên lớp -> dùng lớp hiện tại
     let hasClassName = false;
     for (const c of classes) {
       const nc = normalizeText(c.name);
@@ -1411,7 +1383,6 @@ function ScoreboardPage({
       text.includes("cong") || text.includes("tru") || text.includes("am");
 
     if (!hasClassName && hasGroupWord && hasActionWord) {
-      // BONUS: xử lý ngay trong lớp đang chọn, không cần đọc tên lớp
       applyGroupCommandInActiveClass(raw);
       return;
     }
@@ -1623,6 +1594,7 @@ function ScoreboardPage({
 
     const delta = computeDeltaFromTranscript(raw);
 
+    // Nếu không nói tên lớp -> lấy lớp đang chọn / lớp đầu tiên
     let targetClass: ClassRoom | null = null;
     for (const c of classes) {
       const nc = normalizeText(c.name);
@@ -2149,7 +2121,7 @@ function ScoreboardPage({
             <br />
             <span className="text-[11px] text-gray-500">
               Ví dụ: &quot;6A2 nhóm 1 bạn An cộng 3 điểm&quot; hoặc &quot;6A2 bạn An trừ
-              2 điểm&quot;.
+              2 điểm&quot; (không nói lớp thì áp dụng tại lớp đang chọn).
             </span>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -2367,7 +2339,7 @@ function ScoreboardPage({
 
         <button
           onClick={handleAddGroup}
-          className="rounded-2xl border-2 border-dashed border-purple-200 bg-white/70 flex items-center justify-center text-sm text-purple-600 hover:bg-purple-50"
+          className="rounded-2xl border-2 border-dashed border-purple-200 bg:white/70 flex items-center justify-center text-sm text-purple-600 hover:bg-purple-50"
         >
           + Thêm nhóm mới trong lớp {activeClass.name}
         </button>
@@ -2400,7 +2372,7 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
   });
 
   return (
-    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-4 bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60">
+    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-4 bg:white/95 border border-purple-100 shadow-lg shadow-purple-100/60">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-lg md:text-xl font-semibold text-purple-800">
@@ -2412,7 +2384,7 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
         </div>
         <div className="flex flex-wrap gap-2 items-center">
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
             value={classFilter}
             onChange={(e) => setClassFilter(e.target.value)}
           >
@@ -2424,7 +2396,7 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
           </select>
 
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
             value={typeFilter}
             onChange={(e) =>
               setTypeFilter(e.target.value as "all" | "group" | "individual")
@@ -2456,7 +2428,7 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
             return (
               <div
                 key={entry.id}
-                className="rounded-xl bg-white/95 border border-purple-50 px-3 py-2 text-xs flex flex-col gap-1 shadow-sm"
+                className="rounded-xl bg:white/95 border border-purple-50 px-3 py-2 text-xs flex flex-col gap-1 shadow-sm"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-gray-800">
@@ -2493,6 +2465,7 @@ function HistoryPage({ classes, history }: HistoryPageProps) {
     </div>
   );
 }
+
 /* ========== BẢNG XẾP HẠNG ========== */
 
 interface LeaderboardPageProps {
@@ -2656,7 +2629,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
   const hasPodium = podiumEntries.length > 0;
 
   return (
-    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-5 bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60 max-w-4xl mx-auto">
+    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-5 bg:white/95 border border-purple-100 shadow-lg shadow-purple-100/60 max-w-4xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-lg md:text-xl font-semibold text-purple-800">
@@ -2673,7 +2646,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             onClick={() => setView("grade")}
             className={`px-3 py-1 rounded-full font-medium ${
               view === "grade"
-                ? "bg-white text-purple-700 shadow-sm"
+                ? "bg:white text-purple-700 shadow-sm"
                 : "text-gray-600 hover:text-purple-700"
             }`}
           >
@@ -2684,7 +2657,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             onClick={() => setView("class")}
             className={`px-3 py-1 rounded-full font-medium ${
               view === "class"
-                ? "bg-white text-purple-700 shadow-sm"
+                ? "bg:white text-purple-700 shadow-sm"
                 : "text-gray-600 hover:text-purple-700"
             }`}
           >
@@ -2695,7 +2668,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             onClick={() => setView("group")}
             className={`px-3 py-1 rounded-full font-medium ${
               view === "group"
-                ? "bg-white text-purple-700 shadow-sm"
+                ? "bg:white text-purple-700 shadow-sm"
                 : "text-gray-600 hover:text-purple-700"
             }`}
           >
@@ -2712,7 +2685,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             Chọn khối:
           </span>
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
             value={selectedGrade || gradeOptions[0]}
             onChange={(e) => setSelectedGrade(e.target.value)}
           >
@@ -2731,7 +2704,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             Chọn lớp:
           </span>
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
             value={currentClass?.id || ""}
             onChange={(e) => setSelectedClassId(e.target.value)}
           >
@@ -2750,7 +2723,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             Chọn lớp / nhóm:
           </span>
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
             value={currentClass?.id || ""}
             onChange={(e) => setSelectedClassId(e.target.value)}
           >
@@ -2762,7 +2735,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
           </select>
 
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
             disabled={!currentGroups.length}
@@ -2784,7 +2757,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
         <p className="text-sm text-gray-500 mt-2">
           Chưa có dữ liệu để xếp hạng.
         </p>
-      ) : !hasPodium ? (
+      ) : !podiumEntries.length ? (
         <p className="text-sm text-gray-500 mt-2">
           Chưa có học sinh nào có điểm trong phạm vi đang chọn.
         </p>
@@ -2953,7 +2926,7 @@ function AssistantChat() {
   };
 
   return (
-    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col h-[70vh] bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60">
+    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col h-[70vh] bg:white/95 border border-purple-100 shadow-lg shadow-purple-100/60">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-lg md:text-xl font-semibold text-purple-800">
@@ -2985,7 +2958,7 @@ function AssistantChat() {
             className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-line ${
               m.role === "user"
                 ? "ml-auto bg-gradient-to-br from-purple-500 to-violet-600 text-white shadow"
-                : "mr-auto bg-white/90 border border-purple-50 text-gray-800 shadow-sm"
+                : "mr-auto bg:white/90 border border-purple-50 text-gray-800 shadow-sm"
             }`}
           >
             {m.content}
@@ -2993,7 +2966,7 @@ function AssistantChat() {
         ))}
 
         {loading && (
-          <div className="mr-auto rounded-2xl bg-white/90 border border-purple-50 px-3 py-2 text-sm text-gray-600 flex items-center gap-2">
+          <div className="mr-auto rounded-2xl bg:white/90 border border-purple-50 px-3 py-2 text-sm text-gray-600 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
             <span>Trợ Lý AI đang gõ...</span>
           </div>
@@ -3002,7 +2975,7 @@ function AssistantChat() {
 
       <div className="flex items-center gap-2 pt-2 border-t border-purple-100">
         <input
-          className="flex-1 rounded-full border border-purple-100 bg-white/70 px-4 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+          className="flex-1 rounded-full border border-purple-100 bg:white/70 px-4 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
           placeholder="Nhập câu hỏi cho Trợ Lý AI..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -3042,7 +3015,7 @@ function LoginScreen({
     <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-600 via-indigo-600 to-sky-500 text-gray-900 overflow-hidden">
       <div className="absolute inset-0 opacity-35 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.7),_transparent_55%)]" />
       <div className="relative z-10 max-w-md w-full mx-4">
-        <div className="glass-card rounded-3xl bg-white/90 border border-white/60 shadow-2xl px-6 py-7 md:px-8 md:py-9">
+        <div className="glass-card rounded-3xl bg:white/90 border border-white/60 shadow-2xl px-6 py-7 md:px-8 md:py-9">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center shadow-lg shadow-purple-500/40">
               <span className="text-white font-bold text-xl">C</span>
@@ -3074,7 +3047,7 @@ function LoginScreen({
             disabled={loading}
             className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2.5 shadow-lg shadow-purple-500/40 disabled:opacity-70"
           >
-            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white text-[11px] font-bold text-purple-600">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg:white text-[11px] font-bold text-purple-600">
               G
             </span>
             {loading ? "Đang đăng nhập..." : "Đăng nhập với Google"}
