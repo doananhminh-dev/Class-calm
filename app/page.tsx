@@ -1127,9 +1127,42 @@ function ScoreboardPage({
     return null;
   };
 
-  const computeDeltaFromTranscript = (raw: string): number => {
+    const computeDeltaFromTranscript = (raw: string): number => {
     const norm = normalizeText(raw);
 
+    // ===== ƯU TIÊN: LẤY SỐ NGAY TRƯỚC TỪ "điểm" =====
+    // Hỗ trợ cả số dạng chữ số (5) và dạng chữ (nam, hai, ba...)
+    const idxDiem = norm.lastIndexOf("diem");
+    if (idxDiem !== -1) {
+      const before = norm.slice(0, idxDiem); // phần trước chữ "diem"
+      const tokenRe = /[0-9a-z]+/g;
+      let m2: RegExpExecArray | null;
+      let lastToken: string | null = null;
+
+      // tìm token cuối cùng trước "diem"
+      while ((m2 = tokenRe.exec(before)) !== null) {
+        lastToken = m2[0];
+      }
+
+      if (lastToken) {
+        const t = lastToken.replace(/[^0-9a-z]/g, "");
+        let amountCandidate: number | null = null;
+
+        if (/^\d+$/.test(t)) {
+          amountCandidate = parseInt(t, 10);
+        } else if (wordToNumber[t] != null) {
+          amountCandidate = wordToNumber[t];
+        }
+
+        if (amountCandidate && amountCandidate > 0) {
+          const sign: 1 | -1 =
+            norm.includes("tru") || norm.includes("am") ? -1 : 1;
+          return sign * amountCandidate;
+        }
+      }
+    }
+
+    // ===== CÁC MẪU "+5", "- 3", "tru 2" NHƯ CŨ =====
     let best:
       | {
           sign: 1 | -1;
@@ -1145,7 +1178,7 @@ function ScoreboardPage({
       }
     };
 
-    // 1) "-1", "- 1", "+2", "+ 5"
+    // 1) Mẫu: "-1", "- 1", "+2", "+ 5"
     const symbolRegex = /([+-])\s*(\d+)/g;
     let m: RegExpExecArray | null;
     while ((m = symbolRegex.exec(norm)) !== null) {
@@ -1156,7 +1189,7 @@ function ScoreboardPage({
       trySetBest(sign, amount, m.index);
     }
 
-    // 2) "tru1", "tru 1", "am1", "am 1"
+    // 2) Mẫu: "tru1", "tru 1", "am1", "am 1"
     const wordMinusRegex = /(tru|am)\s*(\d+)/g;
     while ((m = wordMinusRegex.exec(norm)) !== null) {
       const digits = m[2];
@@ -1168,7 +1201,7 @@ function ScoreboardPage({
       return best.sign * best.amount;
     }
 
-    // fallback cũ
+    // ===== Fallback cũ =====
     const digitRegex = /\d+/g;
     let lastDigits: string | null = null;
     let lastIndex = -1;
