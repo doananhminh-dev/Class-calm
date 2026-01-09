@@ -2629,15 +2629,21 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
   const hasPodium = podiumEntries.length > 0;
 
   return (
-    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-5 bg:white/95 border border-purple-100 shadow-lg shadow-purple-100/60 max-w-4xl mx-auto">
+    <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col gap-5 bg-white/95 border border-purple-100 shadow-lg shadow-purple-100/60 max-w-4xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <h2 className="text-lg md:text-xl font-semibold text-purple-800">
-            Bảng Xếp Hạng
-          </h2>
-          <p className="text-xs md:text-sm text-gray-600">
-            Hạng 1–2–3 theo điểm cá nhân cao nhất.
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-md">
+            {/* icon cúp đơn giản */}
+            <span className="text-white text-lg">🏆</span>
+          </div>
+          <div>
+            <h2 className="text-lg md:text-xl font-semibold text-purple-800">
+              Bảng Xếp Hạng
+            </h2>
+            <p className="text-[11px] md:text-xs text-gray-500">
+              Top thành viên theo điểm số
+            </p>
+          </div>
         </div>
 
         <div className="inline-flex rounded-full bg-purple-50 p-1 text-xs md:text-sm border border-purple-100">
@@ -2646,7 +2652,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             onClick={() => setView("grade")}
             className={`px-3 py-1 rounded-full font-medium ${
               view === "grade"
-                ? "bg:white text-purple-700 shadow-sm"
+                ? "bg-white text-purple-700 shadow-sm"
                 : "text-gray-600 hover:text-purple-700"
             }`}
           >
@@ -2657,7 +2663,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             onClick={() => setView("class")}
             className={`px-3 py-1 rounded-full font-medium ${
               view === "class"
-                ? "bg:white text-purple-700 shadow-sm"
+                ? "bg-white text-purple-700 shadow-sm"
                 : "text-gray-600 hover:text-purple-700"
             }`}
           >
@@ -2668,7 +2674,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             onClick={() => setView("group")}
             className={`px-3 py-1 rounded-full font-medium ${
               view === "group"
-                ? "bg:white text-purple-700 shadow-sm"
+                ? "bg-white text-purple-700 shadow-sm"
                 : "text-gray-600 hover:text-purple-700"
             }`}
           >
@@ -2685,7 +2691,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             Chọn khối:
           </span>
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
             value={selectedGrade || gradeOptions[0]}
             onChange={(e) => setSelectedGrade(e.target.value)}
           >
@@ -2704,7 +2710,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             Chọn lớp:
           </span>
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
             value={currentClass?.id || ""}
             onChange={(e) => setSelectedClassId(e.target.value)}
           >
@@ -2723,7 +2729,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
             Chọn lớp / nhóm:
           </span>
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
             value={currentClass?.id || ""}
             onChange={(e) => setSelectedClassId(e.target.value)}
           >
@@ -2735,7 +2741,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
           </select>
 
           <select
-            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg:white/80 text-gray-800"
+            className="text-xs md:text-sm border border-purple-100 rounded-full px-3 py-1.5 bg-white/80 text-gray-800"
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
             disabled={!currentGroups.length}
@@ -2757,7 +2763,7 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
         <p className="text-sm text-gray-500 mt-2">
           Chưa có dữ liệu để xếp hạng.
         </p>
-      ) : !podiumEntries.length ? (
+      ) : !hasPodium ? (
         <p className="text-sm text-gray-500 mt-2">
           Chưa có học sinh nào có điểm trong phạm vi đang chọn.
         </p>
@@ -2772,7 +2778,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   const [first, second, third] = entries;
 
   const renderSlot = (rank: 1 | 2 | 3, entry?: PodiumEntry) => {
-    const medalSize = rank === 1 ? "w-16 h-16" : "w-12 h-12";
+    const medalSize = rank === 1 ? "w-14 h-14" : "w-12 h-12";
     const baseHeight =
       rank === 1
         ? "h-28 md:h-32"
@@ -2780,7 +2786,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
         ? "h-24 md:h-28"
         : "h-20 md:h-24";
 
-    const medalBg =
+    const circleBg =
       rank === 1
         ? "bg-gradient-to-br from-yellow-400 to-amber-500 border-yellow-300"
         : rank === 2
@@ -2804,17 +2810,27 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
     return (
       <div
         key={rank}
-        className="flex flex-col items-center justify-end flex-1 min-w-[84px] md:min-w-[110px]"
+        className="flex flex-col items-center justify-end flex-1 min-w-[96px] md:min-w-[120px]"
       >
         {entry ? (
           <>
             <div className="flex flex-col items-center mb-2">
-              <div
-                className={`flex items-center justify-center rounded-full border-2 shadow-lg ${medalBg} ${medalSize} text-white font-bold text-lg`}
-              >
-                {rank}
+              {/* Huy chương: ruy băng + vòng tròn */}
+              <div className="relative flex flex-col items-center">
+                {/* ruy băng xanh phía trên */}
+                <div className="w-10 h-4 bg-blue-500 rounded-t-xl rounded-b-none flex justify-between px-1">
+                  <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
+                  <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
+                </div>
+                {/* vòng tròn huy chương */}
+                <div
+                  className={`-mt-3 flex items-center justify-center rounded-full border-2 shadow-lg ${circleBg} ${medalSize} text-white font-bold text-lg`}
+                >
+                  {rank}
+                </div>
               </div>
-              <div className="mt-1 text-center">
+
+              <div className="mt-2 text-center">
                 <div
                   className={`text-xs md:text-sm font-semibold ${nameColor} max-w-[8rem] md:max-w-[9rem] truncate`}
                 >
@@ -2830,6 +2846,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
                 </div>
               </div>
             </div>
+
             <div
               className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items-end justify-center pb-2 shadow-sm`}
             >
@@ -2861,7 +2878,6 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
     </div>
   );
 }
-
 /* ========== TRỢ LÝ AI ========== */
 
 function AssistantChat() {
