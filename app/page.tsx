@@ -1127,19 +1127,23 @@ function ScoreboardPage({
     return null;
   };
 
-    const computeDeltaFromTranscript = (raw: string): number => {
+      const computeDeltaFromTranscript = (raw: string): number => {
     const norm = normalizeText(raw);
 
-    // ===== ƯU TIÊN: LẤY SỐ NGAY TRƯỚC TỪ "điểm" =====
-    // Hỗ trợ cả số dạng chữ số (5) và dạng chữ (nam, hai, ba...)
+    const hasMinusWord = (s: string) =>
+      s.includes("tru") || s.includes("am"); // trừ / âm
+    const hasPlusWord = (s: string) =>
+      s.includes("cong") || s.includes("+");
+
+    // ===== 1. Ưu tiên: số ngay trước chữ "điểm" =====
     const idxDiem = norm.lastIndexOf("diem");
     if (idxDiem !== -1) {
-      const before = norm.slice(0, idxDiem); // phần trước chữ "diem"
+      const before = norm.slice(0, idxDiem); // phần trước "diem"
       const tokenRe = /[0-9a-z]+/g;
       let m2: RegExpExecArray | null;
       let lastToken: string | null = null;
 
-      // tìm token cuối cùng trước "diem"
+      // token cuối trước "diem" (có thể là "5" hoặc "nam", "hai"…)
       while ((m2 = tokenRe.exec(before)) !== null) {
         lastToken = m2[0];
       }
@@ -1155,14 +1159,57 @@ function ScoreboardPage({
         }
 
         if (amountCandidate && amountCandidate > 0) {
-          const sign: 1 | -1 =
-            norm.includes("tru") || norm.includes("am") ? -1 : 1;
+          // xét dấu trong vùng gần "điểm" để tránh nhầm với "trừ 6A2"
+          const windowStart = Math.max(0, idxDiem - 20);
+          const windowEnd = Math.min(norm.length, idxDiem + 5);
+          const near = norm.slice(windowStart, windowEnd);
+
+          let sign: 1 | -1 = 1;
+          if (hasMinusWord(near)) sign = -1;
+          else if (!hasPlusWord(near) && hasMinusWord(norm)) sign = -1;
+          // nếu không thấy từ nào thì mặc định là cộng
+
           return sign * amountCandidate;
         }
       }
     }
 
-    // ===== CÁC MẪU "+5", "- 3", "tru 2" NHƯ CŨ =====
+    // ===== 2. Câu dạng: "trừ 2", "cộng 3" (không có chữ điểm) =====
+    const actionNumberRegex = /(cong|tru|am)\s+([0-9a-z]+)/g;
+    let mAction: RegExpExecArray | null;
+    let bestSign: 1 | -1 | 0 = 0;
+    let bestAmount = 0;
+    let bestIndex = -1;
+
+    while ((mAction = actionNumberRegex.exec(norm)) !== null) {
+      const action = mAction[1]; // cong / tru / am
+      const token = mAction[2].replace(/[^0-9a-z]/g, "");
+      let amt: number | null = null;
+
+      if (/^\d+$/.test(token)) {
+        amt = parseInt(token, 10);
+      } else if (wordToNumber[token] != null) {
+        amt = wordToNumber[token];
+      }
+
+      if (!amt || amt <= 0) continue;
+
+      const sign: 1 | -1 =
+        action === "tru" || action === "am" ? -1 : 1;
+
+      // lấy mẫu xuất hiện sau cùng
+      if (mAction.index >= bestIndex) {
+        bestIndex = mAction.index;
+        bestSign = sign;
+        bestAmount = amt;
+      }
+    }
+
+    if (bestSign !== 0 && bestAmount > 0) {
+      return bestSign * bestAmount;
+    }
+
+    // ===== 3. Các mẫu "+5", "- 3", "tru 2" bằng chữ số như trước =====
     let best:
       | {
           sign: 1 | -1;
@@ -1178,7 +1225,7 @@ function ScoreboardPage({
       }
     };
 
-    // 1) Mẫu: "-1", "- 1", "+2", "+ 5"
+    // 3.1 "-1", "- 1", "+2", "+ 5"
     const symbolRegex = /([+-])\s*(\d+)/g;
     let m: RegExpExecArray | null;
     while ((m = symbolRegex.exec(norm)) !== null) {
@@ -1189,7 +1236,7 @@ function ScoreboardPage({
       trySetBest(sign, amount, m.index);
     }
 
-    // 2) Mẫu: "tru1", "tru 1", "am1", "am 1"
+    // 3.2 "tru1", "tru 1", "am1", "am 1"
     const wordMinusRegex = /(tru|am)\s*(\d+)/g;
     while ((m = wordMinusRegex.exec(norm)) !== null) {
       const digits = m[2];
@@ -1201,7 +1248,7 @@ function ScoreboardPage({
       return best.sign * best.amount;
     }
 
-    // ===== Fallback cũ =====
+    // ===== 4. Fallback cực cuối: số cuối cùng trong câu =====
     const digitRegex = /\d+/g;
     let lastDigits: string | null = null;
     let lastIndex = -1;
@@ -1215,7 +1262,7 @@ function ScoreboardPage({
     let amount = 1;
 
     if (!lastDigits) {
-      if (norm.includes("tru") || norm.includes("am")) sign = -1;
+      if (hasMinusWord(norm)) sign = -1;
       else sign = 1;
       amount = 1;
     } else {
@@ -1240,7 +1287,7 @@ function ScoreboardPage({
       } else {
         const nearStart = Math.max(0, lastIndex - 15);
         const near = norm.slice(nearStart, lastIndex);
-        if (near.includes("tru") || near.includes("am")) sign = -1;
+        if (hasMinusWord(near)) sign = -1;
         else sign = 1;
       }
     }
@@ -2811,7 +2858,6 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   const [first, second, third] = entries;
 
   const renderSlot = (rank: 1 | 2 | 3, entry?: PodiumEntry) => {
-    const medalSize = rank === 1 ? "w-14 h-14" : "w-12 h-12";
     const baseHeight =
       rank === 1
         ? "h-28 md:h-32"
@@ -2848,18 +2894,23 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
         {entry ? (
           <>
             <div className="flex flex-col items-center mb-2">
-              {/* Huy chương: ruy băng + vòng tròn */}
+              {/* Huy chương: ruy băng + vòng tròn, đặt trên một vòng trắng để nổi hơn */}
               <div className="relative flex flex-col items-center">
-                {/* ruy băng xanh phía trên */}
-                <div className="w-10 h-4 bg-blue-500 rounded-t-xl rounded-b-none flex justify-between px-1">
-                  <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
-                  <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
-                </div>
-                {/* vòng tròn huy chương */}
-                <div
-                  className={`-mt-3 flex items-center justify-center rounded-full border-2 shadow-lg ${circleBg} ${medalSize} text-white font-bold text-lg`}
-                >
-                  {rank}
+                {/* Vòng trắng bên ngoài cho nổi trên nền */}
+                <div className="w-16 h-16 md:w-18 md:h-18 rounded-full bg-white shadow-md flex items-center justify-center">
+                  <div className="flex flex-col items-center -mt-3">
+                    {/* Ruy băng xanh */}
+                    <div className="w-10 h-4 bg-blue-500 rounded-t-xl rounded-b-none flex justify-between px-1">
+                      <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
+                      <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
+                    </div>
+                    {/* Vòng tròn màu */}
+                    <div
+                      className={`-mt-3 flex items-center justify-center rounded-full border-2 ${circleBg} w-12 h-12 text-white font-bold text-lg`}
+                    >
+                      {rank}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2910,8 +2961,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
       </div>
     </div>
   );
-}
-/* ========== TRỢ LÝ AI ========== */
+}/* ========== TRỢ LÝ AI ========== */
 
 function AssistantChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
