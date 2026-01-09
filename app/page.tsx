@@ -2863,7 +2863,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   const [first, second, third] = entries;
 
   const renderSlot = (rank: 1 | 2 | 3, entry?: PodiumEntry) => {
-    const medalSize = rank === 1 ? "w-16 h-16" : "w-12 h-12";
+    const medalSize = rank === 1 ? "w-14 h-14" : "w-11 h-11";
     const baseHeight =
       rank === 1
         ? "h-28 md:h-32"
@@ -2873,10 +2873,10 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
 
     const medalBg =
       rank === 1
-        ? "bg-gradient-to-br from-yellow-400 to-amber-500 border-amber-300"
+        ? "bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 border-amber-300"
         : rank === 2
-        ? "bg-gradient-to-br from-slate-200 to-slate-400 border-slate-300"
-        : "bg-gradient-to-br from-amber-700 to-orange-500 border-amber-500";
+        ? "bg-gradient-to-br from-slate-100 via-slate-200 to-slate-400 border-slate-300"
+        : "bg-gradient-to-br from-orange-700 via-orange-600 to-orange-500 border-orange-500";
 
     const baseBg =
       rank === 1
@@ -2887,31 +2887,37 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
 
     const nameColor =
       rank === 1
-        ? "text-yellow-800"
+        ? "text-gray-900"
         : rank === 2
-        ? "text-slate-800"
-        : "text-amber-800";
+        ? "text-gray-800"
+        : "text-gray-900";
 
     return (
       <div
         key={rank}
-        className="flex flex-col items-center justify-end flex-1 min-w-[84px] md:min-w-[110px]"
+        className="flex flex-col items-center justify-end flex-1 min-w-[96px] md:min-w-[120px]"
       >
         {entry ? (
           <>
             <div className="flex flex-col items-center mb-2">
-              {/* Huy chương giống hình: ruy băng xanh + vòng tròn màu */}
+              {/* Huy chương giống hình: ruy băng xanh + vòng tròn màu, nổi rõ */}
               <div className="relative flex flex-col items-center">
-                {/* ruy băng xanh phía trên */}
-                <div className="w-10 h-4 bg-blue-500 rounded-t-xl rounded-b-none flex justify-between px-1 shadow-sm">
-                  <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
-                  <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
+                {/* Ruy băng xanh */}
+                <div className="w-10 h-4 flex justify-between px-1">
+                  <div className="w-4 h-4 bg-blue-500 rounded-t-md rounded-bl-full shadow-sm" />
+                  <div className="w-4 h-4 bg-blue-500 rounded-t-md rounded-br-full shadow-sm" />
                 </div>
-                {/* vòng tròn huy chương */}
-                <div
-                  className={`-mt-3 flex items-center justify-center rounded-full border-2 shadow-lg ${medalBg} ${medalSize} text-white font-bold text-lg`}
-                >
-                  {rank}
+
+                {/* Vòng huy chương: có viền trắng mỏng + shadow cho nổi */}
+                <div className="-mt-3 relative">
+                  {/* Vòng trắng ngoài */}
+                  <div className="absolute inset-0 rounded-full bg-white shadow-md scale-110" />
+                  {/* Vòng màu medal */}
+                  <div
+                    className={`relative flex items-center justify-center rounded-full border-2 ${medalBg} ${medalSize} text-white font-bold text-lg`}
+                  >
+                    {rank}
+                  </div>
                 </div>
               </div>
 
@@ -2926,13 +2932,13 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
                     {entry.subtitle}
                   </div>
                 )}
-                <div className="text-[11px] md:text-xs text-gray-700">
+                <div className="text-[11px] md:text-xs text-orange-500 font-semibold">
                   {entry.score} điểm
                 </div>
               </div>
             </div>
 
-            {/* Bục vàng/ bạc/ đồng giữ nguyên như cũ */}
+            {/* Bục podium giữ nguyên chiều cao / màu theo hạng */}
             <div
               className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items-end justify-center pb-2 shadow-sm`}
             >
