@@ -335,12 +335,17 @@ export default function ClassifyPage() {
           if (data.classes) setClasses(data.classes);
           if (data.history) setHistory(data.history);
         } else {
+          const defaults = createInitialClasses();
           await setDoc(ref, {
-            classes,
-            history,
+            classes: defaults,
+            history: [],
             updatedAt: Date.now(),
           });
-        }
+
+          // Cập nhật state để UI + localStorage đồng bộ với user mới
+          setClasses(defaults);
+          setHistory([]);
+	}
         cloudLoadedRef.current = true;
 
         unsubSnapshot = onSnapshot(ref, (snap2) => {
@@ -2857,95 +2862,65 @@ function LeaderboardPage({ classes }: LeaderboardPageProps) {
 function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   const [first, second, third] = entries;
 
-  const renderSlot = (rank: 1 | 2 | 3, entry?: PodiumEntry) => {
-    const baseHeight =
+  const renderCard = (rank: 1 | 2 | 3, entry?: PodiumEntry) => {
+    const medalCircleBg =
       rank === 1
-        ? "h-28 md:h-32"
-        : rank === 2
-        ? "h-24 md:h-28"
-        : "h-20 md:h-24";
-
-    const circleBg =
-      rank === 1
-        ? "bg-gradient-to-br from-yellow-400 to-amber-500 border-yellow-300"
+        ? "bg-gradient-to-br from-yellow-400 to-amber-500 border-amber-300"
         : rank === 2
         ? "bg-gradient-to-br from-slate-200 to-slate-400 border-slate-300"
-        : "bg-gradient-to-br from-amber-700 to-orange-500 border-amber-400";
-
-    const baseBg =
-      rank === 1
-        ? "bg-gradient-to-t from-yellow-200 to-yellow-50"
-        : rank === 2
-        ? "bg-gradient-to-t from-slate-200 to-slate-50"
-        : "bg-gradient-to-t from-amber-200 to-amber-50";
+        : "bg-gradient-to-br from-amber-700 to-orange-500 border-amber-500";
 
     const nameColor =
       rank === 1
-        ? "text-yellow-800"
+        ? "text-gray-900"
         : rank === 2
-        ? "text-slate-800"
-        : "text-amber-800";
+        ? "text-gray-800"
+        : "text-gray-900";
+
+    const rankLabel = `Hạng ${rank}`;
 
     return (
       <div
         key={rank}
-        className="flex flex-col items-center justify-end flex-1 min-w-[96px] md:min-w-[120px]"
+        className="relative flex-1 min-w-[140px] max-w-[200px] bg-white rounded-3xl border border-purple-100 shadow-md px-4 pt-8 pb-4 flex flex-col items-center"
       >
+        {/* Medal trên đầu card */}
+        <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex flex-col items-center">
+          {/* Ruy băng xanh */}
+          <div className="w-10 h-4 bg-blue-500 rounded-t-xl rounded-b-none flex justify-between px-1 shadow-sm">
+            <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
+            <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
+          </div>
+          {/* Vòng tròn medal */}
+          <div
+            className={`-mt-3 flex items-center justify-center rounded-full border ${medalCircleBg} w-12 h-12 text-white font-bold text-lg`}
+          >
+            {rank}
+          </div>
+        </div>
+
         {entry ? (
           <>
-            <div className="flex flex-col items-center mb-2">
-              {/* Huy chương: ruy băng + vòng tròn, đặt trên một vòng trắng để nổi hơn */}
-              <div className="relative flex flex-col items-center">
-                {/* Vòng trắng bên ngoài cho nổi trên nền */}
-                <div className="w-16 h-16 md:w-18 md:h-18 rounded-full bg-white shadow-md flex items-center justify-center">
-                  <div className="flex flex-col items-center -mt-3">
-                    {/* Ruy băng xanh */}
-                    <div className="w-10 h-4 bg-blue-500 rounded-t-xl rounded-b-none flex justify-between px-1">
-                      <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
-                      <div className="w-3 h-4 bg-blue-500 rounded-t-md rounded-b-full" />
-                    </div>
-                    {/* Vòng tròn màu */}
-                    <div
-                      className={`-mt-3 flex items-center justify-center rounded-full border-2 ${circleBg} w-12 h-12 text-white font-bold text-lg`}
-                    >
-                      {rank}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-2 text-center">
-                <div
-                  className={`text-xs md:text-sm font-semibold ${nameColor} max-w-[8rem] md:max-w-[9rem] truncate`}
-                >
-                  {entry.name}
-                </div>
-                {entry.subtitle && (
-                  <div className="text-[10px] md:text-xs text-gray-500 max-w-[8rem] md:max-w-[9rem] truncate">
-                    {entry.subtitle}
-                  </div>
-                )}
-                <div className="text-[11px] md:text-xs text-gray-700">
-                  {entry.score} điểm
-                </div>
-              </div>
+            <div className="mt-2 text-[11px] md:text-xs text-gray-500">
+              {rankLabel}
             </div>
-
             <div
-              className={`w-full ${baseBg} ${baseHeight} rounded-t-xl flex items-end justify-center pb-2 shadow-sm`}
+              className={`mt-1 text-base md:text-lg font-semibold ${nameColor} text-center truncate max-w-[10rem]`}
             >
-              <span className="text-[11px] md:text-xs font-semibold text-gray-700">
-                Hạng {rank}
-              </span>
+              {entry.name}
+            </div>
+            {entry.subtitle && (
+              <div className="mt-1 text-[10px] md:text-xs text-purple-600 text-center truncate max-w-[10rem]">
+                {entry.subtitle}
+              </div>
+            )}
+            <div className="mt-2 text-sm md:text-base font-semibold text-orange-500">
+              {entry.score} điểm
             </div>
           </>
         ) : (
-          <div
-            className={`w-full bg-gray-100 ${baseHeight} rounded-t-xl flex items-end justify-center pb-2`}
-          >
-            <span className="text-[11px] md:text-xs font-medium text-gray-400">
-              Chưa có
-            </span>
+          <div className="mt-4 text-[11px] md:text-xs text-gray-400 text-center">
+            Chưa có dữ liệu
           </div>
         )}
       </div>
@@ -2953,14 +2928,14 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
   };
 
   return (
-    <div className="mt-3">
-      <div className="flex items-end justify-center gap-3 md:gap-6">
-        {renderSlot(2, second)}
-        {renderSlot(1, first)}
-        {renderSlot(3, third)}
-      </div>
+    <div className="mt-4 flex flex-wrap justify-center gap-4 md:gap-6">
+      {/* Hiển thị theo thứ tự: Hạng 2 - Hạng 1 - Hạng 3 cho giống phong cách podium trung tâm */}
+      {renderCard(2, second)}
+      {renderCard(1, first)}
+      {renderCard(3, third)}
     </div>
   );
+}
 }/* ========== TRỢ LÝ AI ========== */
 
 function AssistantChat() {
