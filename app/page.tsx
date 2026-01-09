@@ -2936,7 +2936,7 @@ function LeaderboardPodium({ entries }: { entries: PodiumEntry[] }) {
     </div>
   );
 }
-}/* ========== TRỢ LÝ AI ========== */
+/* ========== TRỢ LÝ AI ========== */
 
 function AssistantChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
